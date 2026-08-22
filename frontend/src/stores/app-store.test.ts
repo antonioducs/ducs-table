@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useAppStore } from "./app-store";
-import type { ConnectionInfo, ExternalRelationInfo, Job, SourceInfo } from "@/types";
+import { preserveWorkspaceMutations, selectActiveSource, selectProjectJobs, useAppStore } from "./app-store";
+import type { ConnectionInfo, ExternalRelationInfo, Job, Project, ProjectWorkspace, SourceInfo } from "@/types";
 
-const source: SourceInfo = {
-  id: "customers-id",
+const project = (id: string, name = id): Project => ({
+  id, name, description: "", lastOpenedAt: `2026-08-2${id === "p1" ? "1" : "0"}T12:00:00Z`, createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z",
+});
+
+const source = (projectId: string, id = "customers-id"): SourceInfo => ({
+  projectId,
+  id,
   displayName: "Customers",
   tableName: "customers",
   kind: "csv",
@@ -11,15 +16,11 @@ const source: SourceInfo = {
   status: "ready",
   isEphemeral: false,
   columns: [{ name: "customer_id", type: "BIGINT", nullable: false, ordinal: 1 }],
-};
+});
 
-const job: Job = {
-  id: "job-id",
-  kind: "import",
-  state: "running",
-  stage: "Materializing",
-  createdAt: "2026-08-20T12:00:00Z",
-};
+const job = (projectId: string, id = `job-${projectId}`): Job => ({
+  projectId, id, kind: "import", state: "running", stage: "Materializing", createdAt: "2026-08-20T12:00:00Z",
+});
 
 const connection: ConnectionInfo = {
   id: "connection-id", name: "Production", kind: "postgres", catalogName: "prod", autoConnect: false, hasSecret: true,
@@ -32,56 +33,131 @@ const relation: ExternalRelationInfo = {
   qualifiedName: '"prod"."public"."profiles"', columns: [{ name: "id", type: "INTEGER", nullable: false, ordinal: 1 }], defaultOrder: ["id"], pagingStable: true,
 };
 
-describe("app store", () => {
+const workspace = (value: Project, sources: SourceInfo[] = []): ProjectWorkspace => ({
+  project: value,
+  sources,
+  savedQueries: [],
+  connections: [],
+  session: { version: 1, sqlDraft: "", tabs: [], history: [], resultSequence: 0 },
+});
+
+describe("normalized project store", () => {
   beforeEach(() => {
     localStorage.clear();
     useAppStore.getState().reset();
+    useAppStore.getState().bootstrap({ projects: [project("p1"), project("p2")], activeProjectId: "p1", workspace: workspace(project("p1")), jobs: [] });
+    useAppStore.getState().startProjectSwitch("p2");
+    useAppStore.getState().commitProjectSwitch("p2", workspace(project("p2")));
+    useAppStore.getState().startProjectSwitch("p1");
+    useAppStore.getState().commitProjectSwitch("p1", workspace(project("p1")));
   });
 
-  it("opens, selects and closes source tabs", () => {
+  it("isolates sources, drafts, tabs, history, and result counters by project", () => {
     const state = useAppStore.getState();
-    state.upsertSource(source);
-    state.openTab(source.id);
-    expect(useAppStore.getState().tabs).toHaveLength(1);
-    expect(useAppStore.getState().activeTabId).toBe(`source:${source.id}`);
+    state.upsertSource("p1", source("p1", "one"));
+    state.upsertSource("p2", source("p2", "two"));
+    state.openTab("p1", "one");
+    state.setDraft("p1", "select 1");
+    state.setDraft("p2", "select 2");
+    state.addHistory("p1", { sql: "select 1", status: "success" });
 
-    useAppStore.getState().closeTab(`source:${source.id}`);
-    expect(useAppStore.getState().tabs).toEqual([]);
-    expect(useAppStore.getState().activeTabId).toBeUndefined();
+    const current = useAppStore.getState();
+    expect(current.projectWorkspaces.p1.sourceIds).toEqual(["one"]);
+    expect(current.projectWorkspaces.p2.sourceIds).toEqual(["two"]);
+    expect(current.projectWorkspaces.p1.session.sqlDraft).toBe("select 1");
+    expect(current.projectWorkspaces.p2.session.sqlDraft).toBe("select 2");
+    expect(current.projectWorkspaces.p1.session.tabs[0].kind).toBe("local");
+    expect(current.projectWorkspaces.p2.session.tabs).toEqual([]);
+    expect(current.projectWorkspaces.p1.session.history).toHaveLength(1);
+    expect(current.nextResultName("p1")).toBe("Result 1");
+    expect(current.nextResultName("p2")).toBe("Result 1");
   });
 
-  it("upserts jobs without ever adding table rows to session state", () => {
-    useAppStore.getState().upsertJob(job);
-    useAppStore.getState().upsertJob({ ...job, state: "completed", progress: 1 });
-    const state = useAppStore.getState();
-    expect(state.jobs).toEqual([{ ...job, state: "completed", progress: 1 }]);
-    expect("rows" in state).toBe(false);
-    expect(JSON.stringify(state)).not.toContain("previewRows");
+  it("caps query history at 20 entries", () => {
+    for (let index = 0; index < 25; index += 1) useAppStore.getState().addHistory("p1", { sql: `select ${index}`, status: "success" });
+    const history = useAppStore.getState().projectWorkspaces.p1.session.history;
+    expect(history).toHaveLength(20);
+    expect(history[0].sql).toBe("select 24");
   });
 
-  it("does not downgrade a ready source when a late preview event arrives", () => {
-    useAppStore.getState().upsertSource(source);
-    useAppStore.getState().upsertSource({ ...source, status: "preparing", previewRows: [{ customer_id: 1 }] });
-    expect(useAppStore.getState().sources[0].status).toBe("ready");
-    expect(useAppStore.getState().sources[0].previewRows).toBeUndefined();
+  it("rejects a mismatched workspace response without changing the active project", () => {
+    useAppStore.getState().startProjectSwitch("p2");
+    expect(useAppStore.getState().commitProjectSwitch("p2", workspace(project("different")))).toBe(false);
+    expect(useAppStore.getState().activeProjectId).toBe("p1");
   });
 
-  it("keeps live relation tabs separate from local source tabs", () => {
-    const state = useAppStore.getState();
-    state.upsertSource(source); state.openTab(source.id); state.upsertConnection(connection); state.openExternalTab(relation);
-    expect(useAppStore.getState().tabs.map((tab) => tab.kind)).toEqual(["dataset", "external"]);
-    expect(useAppStore.getState().activeTabId).toBe(`external:${relation.id}`);
-    useAppStore.getState().closeTab(`external:${relation.id}`);
-    expect(useAppStore.getState().sources).toEqual([source]);
+  it("routes inactive project events without changing current selection", () => {
+    const before = useAppStore.getState().activeProjectId;
+    useAppStore.getState().upsertSource("p2", source("p2", "background"));
+    useAppStore.getState().openTab("p2", "background");
+    expect(useAppStore.getState().activeProjectId).toBe(before);
+    expect(useAppStore.getState().projectWorkspaces.p1.session.activeTabId).toBeUndefined();
+    expect(useAppStore.getState().projectWorkspaces.p2.session.activeTabId).toBeUndefined();
+    expect(selectActiveSource(useAppStore.getState())).toBeUndefined();
   });
 
-  it("persists only lightweight preferences, never connections or credentials", () => {
-    useAppStore.getState().upsertConnection(connection);
+  it("preserves a job completion that races with opening the target project", () => {
+    useAppStore.getState().upsertSource("p2", source("p2", "late-result"));
+    useAppStore.getState().addHistory("p2", { sql: "select 42", status: "success" });
+    expect(useAppStore.getState().nextResultName("p2")).toBe("Result 1");
+    const current = useAppStore.getState().projectWorkspaces.p2;
+    const staleResponse = workspace(project("p2"));
+    const merged = preserveWorkspaceMutations(staleResponse, current, useAppStore.getState().connectionsById);
+
+    expect(merged.sources.map((item) => item.id)).toEqual(["late-result"]);
+    expect(merged.session.history[0].sql).toBe("select 42");
+    expect(merged.session.resultSequence).toBe(1);
+  });
+
+  it("keeps jobs global and filters them by project", () => {
+    useAppStore.getState().upsertJob("p1", job("p1"));
+    useAppStore.getState().upsertJob("p2", job("p2"));
+    useAppStore.getState().upsertJob("p1", { ...job("p1"), state: "completed", progress: 1 });
+    expect(useAppStore.getState().jobIds).toHaveLength(2);
+    expect(selectProjectJobs(useAppStore.getState(), "p1")).toEqual([expect.objectContaining({ projectId: "p1", state: "completed" })]);
+  });
+
+  it("never stores preview rows and does not downgrade a ready source", () => {
+    useAppStore.getState().upsertSource("p1", source("p1"));
+    useAppStore.getState().upsertSource("p1", { ...source("p1"), status: "preparing", previewRows: [{ customer_id: 1 }] });
+    const stored = useAppStore.getState().projectWorkspaces.p1.sourcesById["customers-id"];
+    expect(stored.status).toBe("ready");
+    expect(stored.previewRows).toBeUndefined();
+    expect(JSON.stringify(useAppStore.getState())).not.toContain("customer_id\":1");
+  });
+
+  it("hydrates external placeholders without mixing local tabs", () => {
+    useAppStore.getState().setGlobalConnections([connection]);
+    useAppStore.getState().attachConnection("p1", connection.id);
+    useAppStore.getState().upsertSource("p1", source("p1"));
+    useAppStore.getState().openTab("p1", "customers-id");
+    useAppStore.getState().openExternalTab("p1", relation);
+    useAppStore.getState().markExternalPlaceholder("p1", relation.id, "disconnected");
+    expect(useAppStore.getState().projectWorkspaces.p1.session.tabs.map((tab) => tab.kind)).toEqual(["local", "placeholder"]);
+    useAppStore.getState().upsertExternalRelation("p1", relation);
+    expect(useAppStore.getState().projectWorkspaces.p1.session.tabs.at(-1)?.kind).toBe("external");
+  });
+
+  it("attaches and removes a reusable connection only in the target project", () => {
+    useAppStore.getState().setGlobalConnections([connection]);
+    useAppStore.getState().attachConnection("p1", connection.id);
+    useAppStore.getState().attachConnection("p2", connection.id);
+    useAppStore.getState().detachConnection("p1", connection.id);
+    expect(useAppStore.getState().projectWorkspaces.p1.connectionIds).toEqual([]);
+    expect(useAppStore.getState().projectWorkspaces.p2.connectionIds).toEqual([connection.id]);
+    expect(useAppStore.getState().connectionsById[connection.id]).toEqual(connection);
+  });
+
+  it("persists only lightweight panel layout", () => {
+    useAppStore.getState().setGlobalConnections([connection]);
+    useAppStore.getState().setDraft("p1", "select secret_value");
+    useAppStore.getState().upsertSource("p1", source("p1"));
     useAppStore.getState().setPanel({ sqlCollapsed: true });
-    const persisted = localStorage.getItem("ducs-table:preferences:v1") ?? "";
-    expect(persisted).toContain("preferences");
+    const persisted = localStorage.getItem("ducs-table:layout:v2") ?? "";
+    expect(persisted).toContain("sqlCollapsed");
     expect(persisted).not.toContain("db.internal");
-    expect(persisted).not.toContain("Production");
+    expect(persisted).not.toContain("select secret_value");
+    expect(persisted).not.toContain("customers-id");
     expect(persisted.toLowerCase()).not.toContain("password");
   });
 });

@@ -23,7 +23,7 @@ describe("ConnectionDialog", () => {
   });
 
   it("switches to MongoDB fields behind explicit experimental consent", async () => {
-    const user=userEvent.setup();render(<ConnectionDialog open onOpenChange={vi.fn()} onSaved={vi.fn()} />);
+    const user=userEvent.setup();render(<ConnectionDialog open projectId="project-1" onOpenChange={vi.fn()} onSaved={vi.fn()} />);
     await user.click(screen.getByRole("button",{name:/MongoDB/i}));
     expect(screen.getByLabelText("MongoDB hosts")).toBeInTheDocument();
     expect(screen.getByLabelText("MongoDB database")).toBeInTheDocument();
@@ -36,7 +36,7 @@ describe("ConnectionDialog", () => {
     vi.spyOn(bridge,"TestConnection").mockResolvedValue();
     vi.spyOn(bridge,"CreateConnection").mockResolvedValue(saved);
     vi.spyOn(bridge,"ConnectConnection").mockResolvedValue({ ...saved, status:"connected" });
-    render(<ConnectionDialog open onOpenChange={onOpenChange} onSaved={onSaved} />);
+    render(<ConnectionDialog open projectId="project-1" onOpenChange={onOpenChange} onSaved={onSaved} />);
     await user.type(screen.getByLabelText("Connection name"),"Production");
     await user.type(screen.getByLabelText("SQL catalog alias"),"prod");
     await user.type(screen.getByLabelText("PostgreSQL database"),"app");
@@ -46,7 +46,7 @@ describe("ConnectionDialog", () => {
     expect(await screen.findByText(/Connection succeeded/)).toBeInTheDocument();
     expect(bridge.TestConnection).toHaveBeenCalledWith(expect.objectContaining({ password:"secret" }));
     await user.click(screen.getByRole("button",{name:/Save & connect/i}));
-    await waitFor(() => expect(bridge.ConnectConnection).toHaveBeenCalledWith("conn"));
+    await waitFor(() => expect(bridge.ConnectConnection).toHaveBeenCalledWith({ projectId: "project-1", id: "conn" }));
     expect(onSaved).toHaveBeenLastCalledWith(expect.objectContaining({ status:"connected" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

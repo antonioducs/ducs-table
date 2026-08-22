@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Ban, CheckCircle2, Clock3, LoaderCircle, Pause, X } from "lucide-react";
-import type { Job, JobState } from "@/types";
+import type { Job, JobState, Project } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +11,8 @@ export interface JobsPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   jobs: readonly Job[];
+  projects?: readonly Project[];
+  activeProjectId?: string;
   onCancel: (job: Job) => void;
 }
 
@@ -38,7 +40,7 @@ function percentage(progress?: number): number | undefined {
   return Math.min(100, Math.max(0, Math.round(progress <= 1 ? progress * 100 : progress)));
 }
 
-function JobRow({ job, onCancel }: { job: Job; onCancel: (job: Job) => void }) {
+function JobRow({ job, projectName, onCancel }: { job: Job; projectName: string; onCancel: (job: Job) => void }) {
   const details = stateDetails[job.state];
   const Icon = details.icon;
   const title = titleFor(job);
@@ -55,7 +57,7 @@ function JobRow({ job, onCancel }: { job: Job; onCancel: (job: Job) => void }) {
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[12px] font-medium text-foreground" title={title}>{title}</h3>
-          <p className="mt-0.5 truncate text-[9px] uppercase tracking-wide text-muted-foreground">{job.kind}</p>
+          <p className="mt-0.5 truncate text-[9px] uppercase tracking-wide text-muted-foreground">{job.kind} · {projectName}</p>
         </div>
         <Badge variant={details.variant} className="h-4 px-1.5 text-[8px] uppercase leading-none">{details.label}</Badge>
       </div>
@@ -92,8 +94,12 @@ function JobRow({ job, onCancel }: { job: Job; onCancel: (job: Job) => void }) {
   );
 }
 
-export function JobsPanel({ open, onOpenChange, jobs, onCancel }: JobsPanelProps) {
+export function JobsPanel({ open, onOpenChange, jobs, projects = [], activeProjectId, onCancel }: JobsPanelProps) {
   const activeCount = jobs.filter((job) => job.state === "queued" || job.state === "running").length;
+  const projectNames = Object.fromEntries(projects.map((project) => [project.id, project.name]));
+  const currentJobs = activeProjectId ? jobs.filter((job) => job.projectId === activeProjectId) : [];
+  const otherJobs = activeProjectId ? jobs.filter((job) => job.projectId !== activeProjectId) : [...jobs];
+  const rows = (items: readonly Job[]) => items.map((job) => <JobRow key={job.id} job={job} projectName={projectNames[job.projectId] ?? "Unknown project"} onCancel={onCancel} />);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="left-auto right-0 top-0 h-dvh max-h-none w-[390px] max-w-[calc(100%-2rem)] grid-rows-[auto_1fr] translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-r-0 p-0">
@@ -105,7 +111,16 @@ export function JobsPanel({ open, onOpenChange, jobs, onCancel }: JobsPanelProps
           <DialogDescription>Imports and long-running local operations.</DialogDescription>
         </DialogHeader>
         <ScrollArea className="min-h-0" aria-live="polite">
-          {jobs.length > 0 ? jobs.map((job) => <JobRow key={job.id} job={job} onCancel={onCancel} />) : (
+          {jobs.length > 0 ? <>
+            {activeProjectId && <section aria-label="Current project jobs">
+              <h2 className="sticky top-0 z-10 border-b border-border bg-popover px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Current project · {projectNames[activeProjectId] ?? "Unknown project"}</h2>
+              {currentJobs.length ? rows(currentJobs) : <p className="border-b border-border px-3 py-3 text-[10px] text-muted-foreground">No jobs for the current project.</p>}
+            </section>}
+            <section aria-label="Other projects jobs">
+              <h2 className="sticky top-0 z-10 border-b border-border bg-popover px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Other projects</h2>
+              {otherJobs.length ? rows(otherJobs) : <p className="px-3 py-3 text-[10px] text-muted-foreground">No jobs from other projects.</p>}
+            </section>
+          </> : (
             <div className="grid min-h-56 place-items-center p-6 text-center">
               <div>
                 <CheckCircle2 className="mx-auto size-6 text-primary/70" aria-hidden="true" />

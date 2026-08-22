@@ -3,6 +3,7 @@ package connections
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"ducs-table/internal/database"
 	"ducs-table/internal/extensions"
 	"ducs-table/internal/federation"
+	"ducs-table/internal/models"
 	"ducs-table/internal/workspace"
 )
 
@@ -39,11 +41,22 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	ws := workspace.New(db)
+	projectA, err := ws.InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectA.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", projectA.Name)
+	}
+	projectB, err := ws.CreateProject(ctx, "Project B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	session, err := federation.New(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.New(db)
 	service := NewService(db, session, credentials.NewMemoryStore(), extensions.NewManager(), ws, nil)
 	defer service.Shutdown()
 	info := validPostgresInfo()
@@ -52,7 +65,7 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 	now := time.Now().UTC()
 	info.CreatedAt = now
 	info.UpdatedAt = now
-	if err := service.repo.Create(ctx, info); err != nil {
+	if err := service.repo.Create(ctx, projectA.ID, info); err != nil {
 		t.Fatal(err)
 	}
 	attach := func() {
@@ -69,23 +82,32 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 	}
 	attach()
 	service.setRuntime(info.ID, runtimeState{status: StatusConnected})
-	relations, err := service.ListRelations(ctx, ListRelationsRequest{ConnectionID: info.ID, Schema: "public"})
+	relations, err := service.ListRelations(ctx, ListRelationsRequest{ProjectID: projectA.ID, ConnectionID: info.ID, Schema: "public"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(relations) != 1 {
 		t.Fatalf("relations = %d", len(relations))
 	}
-	relation, err := service.GetExternalRelation(ctx, relations[0].ID)
+	relation, err := service.GetExternalRelation(ctx, projectA.ID, relations[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := service.CreateSnapshot(ctx, SnapshotRequest{RelationID: relation.ID, DisplayName: "People snapshot"})
+	snapshot, err := service.CreateSnapshot(ctx, SnapshotRequest{ProjectID: projectA.ID, RelationID: relation.ID, DisplayName: "People snapshot"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.RowCount != 2 || snapshot.Snapshot == nil {
+	if snapshot.ProjectID != projectA.ID || snapshot.RowCount != 2 || snapshot.Snapshot == nil {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
+	}
+	_, err = service.CreateSnapshot(ctx, SnapshotRequest{ProjectID: projectB.ID, RelationID: relation.ID, DisplayName: "Cross-project snapshot"})
+	var appErr *models.AppError
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeConnectionNotFound {
+		t.Fatalf("cross-project snapshot create error = %#v, want %s", err, models.CodeConnectionNotFound)
+	}
+	_, err = service.RefreshSnapshot(ctx, projectB.ID, snapshot.ID)
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeNotFound {
+		t.Fatalf("cross-project snapshot refresh error = %#v, want %s", err, models.CodeNotFound)
 	}
 	if err := session.WithMutation(ctx, func(conn *sql.Conn) error {
 		_, execErr := conn.ExecContext(ctx, `DETACH ext`)
@@ -107,7 +129,7 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	attach()
-	refreshed, err := service.RefreshSnapshot(ctx, snapshot.ID)
+	refreshed, err := service.RefreshSnapshot(ctx, projectA.ID, snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,10 +138,10 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := service.RefreshSnapshot(cancelled, snapshot.ID); err == nil {
+	if _, err := service.RefreshSnapshot(cancelled, projectA.ID, snapshot.ID); err == nil {
 		t.Fatal("cancelled refresh succeeded")
 	}
-	preserved, err := ws.GetSource(ctx, snapshot.ID)
+	preserved, err := ws.GetSource(ctx, projectA.ID, snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +151,7 @@ func TestSnapshotCreateRefreshCancellationAndConnectionDeletion(t *testing.T) {
 	if err := service.DeleteConnection(ctx, info.ID); err != nil {
 		t.Fatal(err)
 	}
-	preserved, err = ws.GetSource(ctx, snapshot.ID)
+	preserved, err = ws.GetSource(ctx, projectA.ID, snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

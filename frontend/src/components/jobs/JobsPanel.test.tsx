@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Job, JobState } from "@/types";
 import { JobsPanel } from "./JobsPanel";
@@ -7,6 +7,7 @@ afterEach(cleanup);
 
 function job(state: JobState): Job {
   return {
+    projectId: state === "queued" || state === "running" ? "current" : "other",
     id: `job-${state}`,
     kind: "import",
     state,
@@ -23,8 +24,14 @@ describe("JobsPanel", () => {
   it("renders every state and only cancels queued or running jobs", () => {
     const onCancel = vi.fn();
     const states: JobState[] = ["queued", "running", "completed", "failed", "cancelled"];
-    render(<JobsPanel open onOpenChange={vi.fn()} jobs={states.map(job)} onCancel={onCancel} />);
+    render(<JobsPanel open onOpenChange={vi.fn()} jobs={states.map(job)} projects={[{ id: "current", name: "Current", description: "", lastOpenedAt: "", createdAt: "", updatedAt: "" }, { id: "other", name: "Other", description: "", lastOpenedAt: "", createdAt: "", updatedAt: "" }]} activeProjectId="current" onCancel={onCancel} />);
 
+    const currentRegion = screen.getByRole("region", { name: "Current project jobs" });
+    const otherRegion = screen.getByRole("region", { name: "Other projects jobs" });
+    expect(currentRegion).toHaveTextContent("Current project · Current");
+    expect(otherRegion).toHaveTextContent("Other projects");
+    expect(within(currentRegion).getAllByText(/^import · Current$/i)).toHaveLength(2);
+    expect(within(otherRegion).getAllByText(/^import · Other$/i)).toHaveLength(3);
     for (const state of states) expect(document.querySelector(`[data-job-state="${state}"]`)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /^Cancel / })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Cancel running source" }));

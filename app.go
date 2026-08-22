@@ -27,21 +27,21 @@ import (
 // App is the deliberately small Wails surface. The frontend receives metadata
 // and row blocks only; file parsing, SQL, and exports stay in Go/DuckDB.
 type App struct {
-	ctx             context.Context
-	cancel          context.CancelFunc
-	db              *database.DB
-	workspace       *workspace.Service
-	imports         *importers.Service
-	grid            *grid.Service
-	queries         *query.Service
-	exports         *exportservice.Service
-	jobs            *jobs.Manager
-	extensions      *extensions.Manager
-	federated       *federation.Session
-	connections     *connections.Service
-	startupErr      error
-	closeOnce       sync.Once
-	autoConnectOnce sync.Once
+	ctx         context.Context
+	cancel      context.CancelFunc
+	db          *database.DB
+	workspace   *workspace.Service
+	imports     *importers.Service
+	grid        *grid.Service
+	queries     *query.Service
+	exports     *exportservice.Service
+	jobs        *jobs.Manager
+	extensions  *extensions.Manager
+	federated   *federation.Session
+	connections *connections.Service
+	startupErr  error
+	closeOnce   sync.Once
+	autoConnect sync.Mutex
 }
 
 func NewApp() *App { return &App{} }
@@ -121,6 +121,17 @@ func (a *App) ready() error {
 	return nil
 }
 
+func (a *App) validateProject(projectID string) error {
+	project, err := a.workspace.GetProject(a.ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if project.ArchivedAt != nil {
+		return models.NewError(models.CodeProjectArchived, "Project is archived", map[string]any{"projectId": projectID})
+	}
+	return nil
+}
+
 func (a *App) emit(name string, payload any) {
 	if a.ctx != nil && a.ctx.Err() == nil {
 		defer func() { _ = recover() }()
@@ -132,47 +143,228 @@ func (a *App) Bootstrap() (BootstrapState, error) {
 	if err := a.ready(); err != nil {
 		return BootstrapState{}, err
 	}
-	state, err := a.workspace.Bootstrap(a.ctx)
+	projects, err := a.workspace.ListProjects(a.ctx, true)
 	if err != nil {
 		return BootstrapState{}, err
 	}
-	connectionList, err := a.connections.ListConnections(a.ctx)
+	initial, err := a.workspace.InitialProject(a.ctx)
 	if err != nil {
 		return BootstrapState{}, err
+	}
+	if _, err := a.workspace.OpenProject(a.ctx, initial.ID); err != nil {
+		return BootstrapState{}, err
+	}
+	workspaceState, err := a.loadProjectWorkspace(initial.ID)
+	if err != nil {
+		return BootstrapState{}, err
+	}
+	for i := range projects {
+		if projects[i].ID == workspaceState.Project.ID {
+			projects[i] = workspaceState.Project
+			break
+		}
 	}
 	result := BootstrapState{
-		Datasets: state.Datasets, Results: state.Results, SavedQueries: state.SavedQueries,
-		Jobs: a.jobs.List(), Connections: connectionList, Ready: true,
+		Projects: projects, ActiveProjectID: initial.ID, Workspace: workspaceState,
+		Jobs: a.jobs.List(), Ready: true,
 	}
-	a.autoConnectOnce.Do(func() {
-		items := append([]connections.ConnectionInfo(nil), connectionList...)
-		go func() {
-			select {
-			case <-a.ctx.Done():
-				return
-			case <-time.After(100 * time.Millisecond):
-			}
-			for _, info := range items {
-				if !info.AutoConnect {
-					continue
-				}
-				connectionID := info.ID
-				_, _ = a.jobs.SubmitWithMetadata("connection", "Connect "+info.Name, "", func(ctx context.Context, reporter jobs.Reporter) (any, error) {
-					reporter.Update(0, "Connecting external database…")
-					connected, connectErr := a.connections.Connect(ctx, connectionID)
-					if connectErr == nil {
-						reporter.Update(1, "Connected")
-					}
-					return connected, connectErr
-				})
-			}
-		}()
-	})
+	a.scheduleAutoConnect(initial.ID, workspaceState.Connections)
 	return result, nil
 }
 
-func (a *App) OpenFiles() (ImportPathsResult, error) {
+func (a *App) loadProjectWorkspace(projectID string) (ProjectWorkspace, error) {
+	state, err := a.workspace.Bootstrap(a.ctx, projectID)
+	if err != nil {
+		return ProjectWorkspace{}, err
+	}
+	connectionList, err := a.connections.ListProjectConnections(a.ctx, projectID)
+	if err != nil {
+		return ProjectWorkspace{}, err
+	}
+	externalRelations := make([]models.ExternalRelationInfo, 0)
+	warnings := make([]*models.AppError, 0)
+	keptTabs := make([]models.ProjectTabReference, 0, len(state.Session.Tabs))
+	sessionChanged := false
+	for _, tab := range state.Session.Tabs {
+		if tab.Kind != models.ProjectTabKindExternal && !(tab.Kind == models.ProjectTabKindPlaceholder && tab.ConnectionID != "") {
+			keptTabs = append(keptTabs, tab)
+			continue
+		}
+		relation, restoreErr := a.connections.RestoreExternalRelation(a.ctx, projectID, tab)
+		if restoreErr != nil {
+			warning := models.AsAppError(restoreErr)
+			switch warning.Code {
+			case models.CodeExternalRelationNotFound, models.CodeConnectionNotFound:
+				sessionChanged = true
+				warnings = append(warnings, models.NewError(warning.Code, "A saved external tab was removed because its relation is no longer available", map[string]any{"tabId": tab.ID, "projectId": projectID}))
+				continue
+			case models.CodeCatalogLoadFailed, models.CodeConnectionFailed, models.CodeConnectionNotConnected:
+				tab.Kind = models.ProjectTabKindPlaceholder
+				tab.PlaceholderReason = "disconnected"
+				if relation.ID != "" {
+					tab.RelationID = relation.ID
+					externalRelations = append(externalRelations, relation)
+				}
+				keptTabs = append(keptTabs, tab)
+				sessionChanged = true
+				warnings = append(warnings, models.NewError(warning.Code, "A saved external tab could not be validated yet and remains available as a placeholder", map[string]any{"tabId": tab.ID, "projectId": projectID}))
+				continue
+			default:
+				return ProjectWorkspace{}, restoreErr
+			}
+		}
+		if tab.RelationID != relation.ID {
+			tab.RelationID = relation.ID
+			sessionChanged = true
+		}
+		connected := false
+		for _, info := range connectionList {
+			if info.ID == tab.ConnectionID && info.Status == connections.StatusConnected {
+				connected = true
+				break
+			}
+		}
+		if connected && tab.Kind == models.ProjectTabKindPlaceholder {
+			tab.Kind = models.ProjectTabKindExternal
+			tab.PlaceholderReason = ""
+			sessionChanged = true
+		} else if !connected && tab.Kind == models.ProjectTabKindExternal {
+			tab.Kind = models.ProjectTabKindPlaceholder
+			tab.PlaceholderReason = "disconnected"
+			sessionChanged = true
+		}
+		keptTabs = append(keptTabs, tab)
+		externalRelations = append(externalRelations, relation)
+	}
+	if sessionChanged {
+		state.Session.Tabs = keptTabs
+		if state.Session.ActiveTabID != nil {
+			found := false
+			for _, tab := range keptTabs {
+				if tab.ID == *state.Session.ActiveTabID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				state.Session.ActiveTabID = nil
+			}
+		}
+		if err := a.workspace.SaveSession(a.ctx, projectID, state.Session); err != nil {
+			return ProjectWorkspace{}, err
+		}
+	}
+	return ProjectWorkspace{
+		Project: state.Project, Sources: state.Sources, SavedQueries: state.SavedQueries,
+		Connections: connectionList, ExternalRelations: externalRelations, Session: state.Session, Warnings: warnings,
+	}, nil
+}
+
+func (a *App) scheduleAutoConnect(projectID string, items []connections.ConnectionInfo) {
+	items = append([]connections.ConnectionInfo(nil), items...)
+	go func() {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+		for _, info := range items {
+			if !info.AutoConnect || info.Status == connections.StatusConnected || info.Status == connections.StatusConnecting {
+				continue
+			}
+			connectionID := info.ID
+			a.autoConnect.Lock()
+			alreadyScheduled := false
+			for _, existing := range a.jobs.List() {
+				if existing.Kind == "connection" && existing.SourceID == connectionID &&
+					(existing.State == jobs.StateQueued || existing.State == jobs.StateRunning) {
+					alreadyScheduled = true
+					break
+				}
+			}
+			if alreadyScheduled {
+				a.autoConnect.Unlock()
+				continue
+			}
+			current, err := a.connections.GetConnection(a.ctx, connectionID)
+			if err != nil || current.Status == connections.StatusConnected || current.Status == connections.StatusConnecting {
+				a.autoConnect.Unlock()
+				continue
+			}
+			_, submitErr := a.jobs.Submit(jobs.Metadata{ProjectID: projectID, Kind: "connection", Label: "Connect " + info.Name, SourceID: connectionID}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+				reporter.Update(0, "Connecting external database…")
+				connected, connectErr := a.connections.Connect(ctx, projectID, connectionID)
+				if connectErr == nil {
+					reporter.Update(1, "Connected")
+				}
+				return connected, connectErr
+			})
+			a.autoConnect.Unlock()
+			if submitErr != nil {
+				return
+			}
+		}
+	}()
+}
+
+func (a *App) OpenProject(projectID string) (ProjectWorkspace, error) {
 	if err := a.ready(); err != nil {
+		return ProjectWorkspace{}, err
+	}
+	if _, err := a.workspace.OpenProject(a.ctx, projectID); err != nil {
+		return ProjectWorkspace{}, err
+	}
+	state, err := a.loadProjectWorkspace(projectID)
+	if err != nil {
+		return ProjectWorkspace{}, err
+	}
+	a.scheduleAutoConnect(projectID, state.Connections)
+	return state, nil
+}
+
+func (a *App) CreateProject(request ProjectCreateRequest) (models.Project, error) {
+	if err := a.ready(); err != nil {
+		return models.Project{}, err
+	}
+	return a.workspace.CreateProject(a.ctx, request.Name, request.Description)
+}
+
+func (a *App) UpdateProject(request ProjectUpdateRequest) (models.Project, error) {
+	if err := a.ready(); err != nil {
+		return models.Project{}, err
+	}
+	return a.workspace.UpdateProject(a.ctx, request.ProjectID, request.Name, request.Description)
+}
+
+func (a *App) ArchiveProject(projectID string) (models.Project, error) {
+	if err := a.ready(); err != nil {
+		return models.Project{}, err
+	}
+	if a.jobs.HasActiveProject(projectID) {
+		return models.Project{}, models.NewError(models.CodeConflict, "A project with queued or running jobs cannot be archived", map[string]any{"projectId": projectID})
+	}
+	return a.workspace.ArchiveProject(a.ctx, projectID)
+}
+
+func (a *App) RestoreProject(projectID string) (models.Project, error) {
+	if err := a.ready(); err != nil {
+		return models.Project{}, err
+	}
+	return a.workspace.RestoreProject(a.ctx, projectID)
+}
+
+func (a *App) SaveProjectSession(request ProjectSessionRequest) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.workspace.SaveSession(a.ctx, request.ProjectID, request.Session)
+}
+
+func (a *App) OpenFiles(projectID string) (ImportPathsResult, error) {
+	if err := a.ready(); err != nil {
+		return ImportPathsResult{}, err
+	}
+	if err := a.validateProject(projectID); err != nil {
 		return ImportPathsResult{}, err
 	}
 	paths, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
@@ -189,21 +381,25 @@ func (a *App) OpenFiles() (ImportPathsResult, error) {
 	if len(paths) == 0 {
 		return ImportPathsResult{}, nil
 	}
-	return a.ImportPaths(ImportPathsRequest{Paths: paths})
+	return a.ImportPaths(ImportPathsRequest{ProjectID: projectID, Paths: paths})
 }
 
 func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error) {
 	if err := a.ready(); err != nil {
 		return ImportPathsResult{}, err
 	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return ImportPathsResult{}, err
+	}
 	result := ImportPathsResult{
-		Sources: make([]PreviewSource, 0, len(request.Paths)),
-		Jobs:    make([]jobs.Snapshot, 0, len(request.Paths)),
+		ProjectID: request.ProjectID,
+		Sources:   make([]PreviewSource, 0, len(request.Paths)),
+		Jobs:      make([]jobs.Snapshot, 0, len(request.Paths)),
 	}
 	for _, path := range request.Paths {
 		file, err := a.imports.Validate(path)
 		if err != nil {
-			failed, idErr := failedPreview(path, "", err)
+			failed, idErr := failedPreview(request.ProjectID, path, "", err)
 			if idErr != nil {
 				return result, idErr
 			}
@@ -213,7 +409,7 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 		if file.Type == importers.FileXLSX {
 			sheets, sheetErr := a.imports.ListSheets(file.Path)
 			if sheetErr != nil {
-				failed, idErr := failedPreview(file.Path, string(file.Type), sheetErr)
+				failed, idErr := failedPreview(request.ProjectID, file.Path, string(file.Type), sheetErr)
 				if idErr != nil {
 					return result, idErr
 				}
@@ -222,11 +418,11 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 			}
 			if len(sheets) > 1 {
 				result.Workbooks = append(result.Workbooks, WorkbookSheets{
-					Path: file.Path, DisplayName: file.Name, Sheets: sheets,
+					ProjectID: request.ProjectID, Path: file.Path, DisplayName: file.Name, Sheets: sheets,
 				})
 				continue
 			}
-			preview, job, startErr := a.startImport(file.Path, sheets[0], request.Options)
+			preview, job, startErr := a.startImport(request.ProjectID, file.Path, sheets[0], request.Options)
 			if startErr != nil {
 				return result, startErr
 			}
@@ -236,7 +432,7 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 			}
 			continue
 		}
-		preview, job, startErr := a.startImport(file.Path, "", request.Options)
+		preview, job, startErr := a.startImport(request.ProjectID, file.Path, "", request.Options)
 		if startErr != nil {
 			return result, startErr
 		}
@@ -248,11 +444,14 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 	return result, nil
 }
 
-func (a *App) ListWorkbookSheets(path string) (WorkbookSheets, error) {
+func (a *App) ListWorkbookSheets(request WorkbookSheetsRequest) (WorkbookSheets, error) {
 	if err := a.ready(); err != nil {
 		return WorkbookSheets{}, err
 	}
-	file, err := a.imports.Validate(path)
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return WorkbookSheets{}, err
+	}
+	file, err := a.imports.Validate(request.Path)
 	if err != nil {
 		return WorkbookSheets{}, err
 	}
@@ -260,19 +459,22 @@ func (a *App) ListWorkbookSheets(path string) (WorkbookSheets, error) {
 	if err != nil {
 		return WorkbookSheets{}, err
 	}
-	return WorkbookSheets{Path: file.Path, DisplayName: file.Name, Sheets: sheets}, nil
+	return WorkbookSheets{ProjectID: request.ProjectID, Path: file.Path, DisplayName: file.Name, Sheets: sheets}, nil
 }
 
 func (a *App) StartXLSXImport(request XLSXImportRequest) (ImportPathsResult, error) {
 	if err := a.ready(); err != nil {
 		return ImportPathsResult{}, err
 	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return ImportPathsResult{}, err
+	}
 	if len(request.Sheets) == 0 {
 		return ImportPathsResult{}, models.NewError(models.CodeInvalidArgument, "Choose a worksheet to import", nil)
 	}
-	result := ImportPathsResult{Sources: make([]PreviewSource, 0, len(request.Sheets)), Jobs: make([]jobs.Snapshot, 0, len(request.Sheets))}
+	result := ImportPathsResult{ProjectID: request.ProjectID, Sources: make([]PreviewSource, 0, len(request.Sheets)), Jobs: make([]jobs.Snapshot, 0, len(request.Sheets))}
 	for _, sheet := range request.Sheets {
-		preview, job, err := a.startImport(request.Path, sheet, request.Options)
+		preview, job, err := a.startImport(request.ProjectID, request.Path, sheet, request.Options)
 		if err != nil {
 			return result, err
 		}
@@ -284,14 +486,14 @@ func (a *App) StartXLSXImport(request XLSXImportRequest) (ImportPathsResult, err
 	return result, nil
 }
 
-func (a *App) startImport(path, sheet string, options importers.Options) (PreviewSource, *jobs.Snapshot, error) {
+func (a *App) startImport(projectID, path, sheet string, options importers.Options) (PreviewSource, *jobs.Snapshot, error) {
 	id, err := models.NewID()
 	if err != nil {
 		return PreviewSource{}, nil, models.WrapError(models.CodeDatabase, "Could not create an import ID", err, nil)
 	}
 	preview, err := a.imports.Preview(a.ctx, path, options, sheet, 200)
 	if err != nil {
-		failed, failedErr := failedPreviewWithID(id, path, stringFromExtension(path), err)
+		failed, failedErr := failedPreviewWithID(projectID, id, path, stringFromExtension(path), err)
 		return failed, nil, failedErr
 	}
 	displayName := strings.TrimSuffix(preview.File.Name, filepath.Ext(preview.File.Name))
@@ -299,42 +501,42 @@ func (a *App) startImport(path, sheet string, options importers.Options) (Previe
 		displayName += " — " + preview.Sheet
 	}
 	view := PreviewSource{
-		ID: id, DisplayName: displayName, TableName: database.NormalizeIdentifier(displayName),
+		ProjectID: projectID, ID: id, DisplayName: displayName, TableName: database.NormalizeIdentifier(displayName),
 		SourcePath: preview.File.Path, Kind: string(preview.File.Type), Sheet: preview.Sheet,
 		Size: preview.File.Size, Status: "preparing", Columns: preview.Columns, PreviewRows: preview.Rows,
 	}
-	snapshot, err := a.jobs.SubmitWithMetadata("import", displayName, id, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	snapshot, err := a.jobs.Submit(jobs.Metadata{ProjectID: projectID, Kind: "import", Label: displayName, SourceID: id}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Materializing in DuckDB…")
 		source, importErr := a.imports.Materialize(ctx, importers.MaterializeRequest{
-			ID: id, Path: preview.File.Path, DisplayName: displayName,
+			ProjectID: projectID, ID: id, Path: preview.File.Path, DisplayName: displayName,
 			Sheet: preview.Sheet, Options: options,
 		})
 		if importErr != nil {
 			a.emit("ducs:dataset-failed", map[string]any{
-				"sourceId": id, "error": models.AsAppError(importErr),
+				"projectId": projectID, "sourceId": id, "error": models.AsAppError(importErr),
 			})
 			return nil, importErr
 		}
 		reporter.Update(1, "Ready")
-		a.emit("ducs:dataset-ready", source)
+		a.emit("ducs:dataset-ready", map[string]any{"projectId": projectID, "source": source})
 		return source, nil
 	})
 	if err != nil {
 		return PreviewSource{}, nil, err
 	}
-	a.emit("ducs:dataset-preview", view)
+	a.emit("ducs:dataset-preview", map[string]any{"projectId": projectID, "source": view})
 	return view, &snapshot, nil
 }
 
-func failedPreview(path, kind string, cause error) (PreviewSource, error) {
+func failedPreview(projectID, path, kind string, cause error) (PreviewSource, error) {
 	id, err := models.NewID()
 	if err != nil {
 		return PreviewSource{}, models.WrapError(models.CodeDatabase, "Could not create an import ID", err, nil)
 	}
-	return failedPreviewWithID(id, path, kind, cause)
+	return failedPreviewWithID(projectID, id, path, kind, cause)
 }
 
-func failedPreviewWithID(id, path, kind string, cause error) (PreviewSource, error) {
+func failedPreviewWithID(projectID, id, path, kind string, cause error) (PreviewSource, error) {
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	if name == "" || name == "." {
 		name = "Import"
@@ -343,7 +545,7 @@ func failedPreviewWithID(id, path, kind string, cause error) (PreviewSource, err
 		kind = stringFromExtension(path)
 	}
 	return PreviewSource{
-		ID: id, DisplayName: name, TableName: database.NormalizeIdentifier(name),
+		ProjectID: projectID, ID: id, DisplayName: name, TableName: database.NormalizeIdentifier(name),
 		SourcePath: path, Kind: kind, Status: "failed", Columns: []models.ColumnInfo{},
 		Error: models.AsAppError(cause),
 	}, nil
@@ -353,11 +555,11 @@ func stringFromExtension(path string) string {
 	return strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
 }
 
-func (a *App) GetSource(sourceID string) (models.SourceInfo, error) {
+func (a *App) GetSource(request ProjectResourceRequest) (models.SourceInfo, error) {
 	if err := a.ready(); err != nil {
 		return models.SourceInfo{}, err
 	}
-	return a.workspace.GetSource(a.ctx, sourceID)
+	return a.workspace.GetSource(a.ctx, request.ProjectID, request.ID)
 }
 
 func (a *App) GetRows(request grid.RowsRequest) (grid.RowsResponse, error) {
@@ -375,7 +577,7 @@ func (a *App) GetCellValue(request CellValueRequest) (CellValueResponse, error) 
 		return CellValueResponse{}, models.NewError(models.CodeInvalidArgument, "Row index cannot be negative", nil)
 	}
 	built, err := a.grid.BuildSelect(a.ctx, grid.SelectRequest{
-		Resource: request.Resource, SourceID: request.SourceID, Columns: []string{request.Column}, Sorts: request.Sorts,
+		ProjectID: request.ProjectID, Resource: request.Resource, SourceID: request.SourceID, Columns: []string{request.Column}, Sorts: request.Sorts,
 		Filters: request.Filters, Offset: request.RowIndex, Limit: 1,
 	}, true)
 	if err != nil {
@@ -399,7 +601,7 @@ func (a *App) CountRows(request CountRowsRequest) (CountRowsResponse, error) {
 	if resource.Kind == "" {
 		resource = models.GridResourceRef{Kind: "source", SourceID: request.SourceID}
 	}
-	count, err := a.grid.CountResource(a.ctx, resource, request.Filters)
+	count, err := a.grid.CountResource(a.ctx, request.ProjectID, resource, request.Filters)
 	return CountRowsResponse{Count: count}, err
 }
 
@@ -407,9 +609,12 @@ func (a *App) RunQuery(request RunQueryRequest) (query.QueryResultInfo, error) {
 	if err := a.ready(); err != nil {
 		return query.QueryResultInfo{}, err
 	}
-	snapshot, err := a.jobs.SubmitWithMetadata("query", "SQL query", "", func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return query.QueryResultInfo{}, err
+	}
+	snapshot, err := a.jobs.Submit(jobs.Metadata{ProjectID: request.ProjectID, Kind: "query", Label: "SQL query"}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Running SQL in DuckDB…")
-		return a.queries.Run(ctx, request.SQL)
+		return a.queries.Run(ctx, request.ProjectID, request.SQL)
 	})
 	if err != nil {
 		return query.QueryResultInfo{}, err
@@ -425,7 +630,7 @@ func (a *App) RunQuery(request RunQueryRequest) (query.QueryResultInfo, error) {
 	if !ok {
 		return query.QueryResultInfo{}, models.NewError(models.CodeDatabase, "Query result could not be read", nil)
 	}
-	a.emit("ducs:result-ready", result)
+	a.emit("ducs:result-ready", map[string]any{"projectId": request.ProjectID, "source": result.Source})
 	return result, nil
 }
 
@@ -434,16 +639,16 @@ func (a *App) SaveQuery(request SaveQueryRequest) (models.SavedQuery, error) {
 		return models.SavedQuery{}, err
 	}
 	if strings.TrimSpace(request.ID) == "" {
-		return a.workspace.CreateSavedQuery(a.ctx, request.Name, request.SQL)
+		return a.workspace.CreateSavedQuery(a.ctx, request.ProjectID, request.Name, request.SQL)
 	}
-	return a.workspace.UpdateSavedQuery(a.ctx, request.ID, request.Name, request.SQL)
+	return a.workspace.UpdateSavedQuery(a.ctx, request.ProjectID, request.ID, request.Name, request.SQL)
 }
 
-func (a *App) DeleteSavedQuery(id string) error {
+func (a *App) DeleteSavedQuery(request ProjectResourceRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.workspace.DeleteSavedQuery(a.ctx, id)
+	return a.workspace.DeleteSavedQuery(a.ctx, request.ProjectID, request.ID)
 }
 
 func (a *App) SaveResultAsTable(request query.SaveResultRequest) (models.SourceInfo, error) {
@@ -453,18 +658,18 @@ func (a *App) SaveResultAsTable(request query.SaveResultRequest) (models.SourceI
 	return a.queries.SaveResult(a.ctx, request)
 }
 
-func (a *App) CloseResult(id string) error {
+func (a *App) CloseResult(request ProjectResourceRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.queries.CloseResult(a.ctx, id)
+	return a.queries.CloseResult(a.ctx, request.ProjectID, request.ID)
 }
 
-func (a *App) RemoveDataset(id string) error {
+func (a *App) RemoveDataset(request ProjectResourceRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.workspace.RemoveDataset(a.ctx, id)
+	return a.workspace.RemoveDataset(a.ctx, request.ProjectID, request.ID)
 }
 
 func (a *App) ExportCSV(request ExportRequest) (exportservice.Result, error) {
@@ -479,14 +684,14 @@ func (a *App) ExportCSV(request ExportRequest) (exportservice.Result, error) {
 	var exportName, exportID string
 	if destination == "" {
 		if resource.Kind == "external" {
-			relation, relationErr := a.connections.GetExternalRelation(a.ctx, resource.RelationID)
+			relation, relationErr := a.connections.GetExternalRelation(a.ctx, request.ProjectID, resource.RelationID)
 			if relationErr != nil {
 				return exportservice.Result{}, relationErr
 			}
 			exportName = relation.Name
 			exportID = relation.ID
 		} else {
-			source, sourceErr := a.workspace.GetSource(a.ctx, resource.SourceID)
+			source, sourceErr := a.workspace.GetSource(a.ctx, request.ProjectID, resource.SourceID)
 			if sourceErr != nil {
 				return exportservice.Result{}, sourceErr
 			}
@@ -509,14 +714,14 @@ func (a *App) ExportCSV(request ExportRequest) (exportservice.Result, error) {
 	}
 	if exportName == "" {
 		if resource.Kind == "external" {
-			relation, relationErr := a.connections.GetExternalRelation(a.ctx, resource.RelationID)
+			relation, relationErr := a.connections.GetExternalRelation(a.ctx, request.ProjectID, resource.RelationID)
 			if relationErr != nil {
 				return exportservice.Result{}, relationErr
 			}
 			exportName = relation.Name
 			exportID = relation.ID
 		} else {
-			source, sourceErr := a.workspace.GetSource(a.ctx, resource.SourceID)
+			source, sourceErr := a.workspace.GetSource(a.ctx, request.ProjectID, resource.SourceID)
 			if sourceErr != nil {
 				return exportservice.Result{}, sourceErr
 			}
@@ -524,10 +729,10 @@ func (a *App) ExportCSV(request ExportRequest) (exportservice.Result, error) {
 			exportID = source.ID
 		}
 	}
-	job, err := a.jobs.SubmitWithMetadata("export", exportName, exportID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	job, err := a.jobs.Submit(jobs.Metadata{ProjectID: request.ProjectID, Kind: "export", Label: exportName, SourceID: exportID}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Exporting CSV with DuckDB…")
 		return a.exports.ExportCSV(ctx, exportservice.CSVRequest{
-			Resource: resource, SourceID: request.SourceID, Destination: destination, Scope: exportservice.Scope(request.Scope),
+			ProjectID: request.ProjectID, Resource: resource, SourceID: request.SourceID, Destination: destination, Scope: exportservice.Scope(request.Scope),
 			Filters: request.Filters, Sorts: request.Sorts, VisibleColumns: request.VisibleColumns,
 		})
 	})
@@ -564,11 +769,71 @@ func safeFilename(name string) string {
 	return name
 }
 
-func (a *App) ListConnections() ([]connections.ConnectionInfo, error) {
+func (a *App) ListGlobalConnections() ([]connections.ConnectionInfo, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
 	return a.connections.ListConnections(a.ctx)
+}
+
+// ListConnections remains a compatibility alias for older generated bindings.
+func (a *App) ListConnections() ([]connections.ConnectionInfo, error) {
+	return a.ListGlobalConnections()
+}
+
+func (a *App) AttachConnectionToProject(request ProjectConnectionRequest) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	if err := a.workspace.AttachConnection(a.ctx, request.ProjectID, request.ConnectionID); err != nil {
+		return err
+	}
+	info, err := a.connections.GetConnection(a.ctx, request.ConnectionID)
+	if err == nil && info.AutoConnect {
+		a.scheduleAutoConnect(request.ProjectID, []connections.ConnectionInfo{info})
+	}
+	return err
+}
+
+func (a *App) DetachConnectionFromProject(request ProjectConnectionRequest) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	if err := a.workspace.DetachConnection(a.ctx, request.ProjectID, request.ConnectionID); err != nil {
+		return err
+	}
+	session, err := a.workspace.LoadSession(a.ctx, request.ProjectID)
+	if err != nil {
+		return err
+	}
+	tabs := session.Tabs[:0]
+	for _, tab := range session.Tabs {
+		if tab.Kind == models.ProjectTabKindExternal && tab.ConnectionID == request.ConnectionID {
+			continue
+		}
+		tabs = append(tabs, tab)
+	}
+	session.Tabs = tabs
+	if session.ActiveTabID != nil {
+		found := false
+		for _, tab := range tabs {
+			if tab.ID == *session.ActiveTabID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			session.ActiveTabID = nil
+		}
+	}
+	return a.workspace.SaveSession(a.ctx, request.ProjectID, session)
+}
+
+func (a *App) ConnectionUsageCount(connectionID string) (int, error) {
+	if err := a.ready(); err != nil {
+		return 0, err
+	}
+	return a.workspace.ConnectionUsageCount(a.ctx, connectionID)
 }
 
 func (a *App) CreateConnection(request connections.CreateConnectionRequest) (connections.ConnectionInfo, error) {
@@ -603,32 +868,32 @@ func (a *App) ConnectConnection(request connections.ConnectRequest) (connections
 	if err := a.ready(); err != nil {
 		return connections.ConnectionInfo{}, err
 	}
-	return a.connections.Connect(a.ctx, request.ID)
+	return a.connections.Connect(a.ctx, request.ProjectID, request.ID)
 }
 
-func (a *App) DisconnectConnection(id string) error {
+func (a *App) DisconnectConnection(request connections.ConnectRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	return a.connections.Disconnect(a.ctx, id)
+	return a.connections.Disconnect(a.ctx, request.ProjectID, request.ID)
 }
 
-func (a *App) RefreshConnectionCatalog(id string) error {
+func (a *App) RefreshConnectionCatalog(request connections.ConnectRequest) error {
 	if err := a.ready(); err != nil {
 		return err
 	}
-	if err := a.connections.RefreshCatalog(a.ctx, id); err != nil {
+	if err := a.connections.RefreshCatalog(a.ctx, request.ProjectID, request.ID); err != nil {
 		return err
 	}
-	a.emit("ducs:catalog-invalidated", map[string]any{"connectionId": id})
+	a.emit("ducs:catalog-invalidated", map[string]any{"projectId": request.ProjectID, "connectionId": request.ID})
 	return nil
 }
 
-func (a *App) ListConnectionSchemas(id string) ([]connections.SchemaInfo, error) {
+func (a *App) ListConnectionSchemas(request connections.ConnectRequest) ([]connections.SchemaInfo, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	return a.connections.ListSchemas(a.ctx, id)
+	return a.connections.ListSchemas(a.ctx, request.ProjectID, request.ID)
 }
 
 func (a *App) ListExternalRelations(request connections.ListRelationsRequest) ([]models.ExternalRelationInfo, error) {
@@ -638,26 +903,26 @@ func (a *App) ListExternalRelations(request connections.ListRelationsRequest) ([
 	return a.connections.ListRelations(a.ctx, request)
 }
 
-func (a *App) GetExternalRelation(id string) (models.ExternalRelationInfo, error) {
+func (a *App) GetExternalRelation(request ProjectResourceRequest) (models.ExternalRelationInfo, error) {
 	if err := a.ready(); err != nil {
 		return models.ExternalRelationInfo{}, err
 	}
-	return a.connections.GetExternalRelation(a.ctx, id)
+	return a.connections.GetExternalRelation(a.ctx, request.ProjectID, request.ID)
 }
 
 func (a *App) SnapshotExternalRelation(request connections.SnapshotRequest) (jobs.Snapshot, error) {
 	if err := a.ready(); err != nil {
 		return jobs.Snapshot{}, err
 	}
-	job, err := a.jobs.SubmitWithMetadata("snapshot", "Snapshot external relation", request.RelationID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	job, err := a.jobs.Submit(jobs.Metadata{ProjectID: request.ProjectID, Kind: "snapshot", Label: "Snapshot external relation", SourceID: request.RelationID}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Copying the live relation locally…")
 		source, snapshotErr := a.connections.CreateSnapshot(ctx, request)
 		if snapshotErr != nil {
-			a.emit("ducs:snapshot-failed", map[string]any{"relationId": request.RelationID, "error": models.AsAppError(snapshotErr)})
+			a.emit("ducs:snapshot-failed", map[string]any{"projectId": request.ProjectID, "relationId": request.RelationID, "error": models.AsAppError(snapshotErr)})
 			return nil, snapshotErr
 		}
 		reporter.Update(1, "Snapshot ready")
-		a.emit("ducs:snapshot-ready", source)
+		a.emit("ducs:snapshot-ready", map[string]any{"projectId": request.ProjectID, "source": source})
 		return source, nil
 	})
 	return job, err
@@ -667,15 +932,15 @@ func (a *App) RefreshSnapshot(request connections.RefreshSnapshotRequest) (jobs.
 	if err := a.ready(); err != nil {
 		return jobs.Snapshot{}, err
 	}
-	job, err := a.jobs.SubmitWithMetadata("snapshot-refresh", "Refresh snapshot", request.SourceID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	job, err := a.jobs.Submit(jobs.Metadata{ProjectID: request.ProjectID, Kind: "snapshot-refresh", Label: "Refresh snapshot", SourceID: request.SourceID}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Refreshing snapshot while keeping the current version available…")
-		source, refreshErr := a.connections.RefreshSnapshot(ctx, request.SourceID)
+		source, refreshErr := a.connections.RefreshSnapshot(ctx, request.ProjectID, request.SourceID)
 		if refreshErr != nil {
-			a.emit("ducs:snapshot-failed", map[string]any{"sourceId": request.SourceID, "error": models.AsAppError(refreshErr)})
+			a.emit("ducs:snapshot-failed", map[string]any{"projectId": request.ProjectID, "sourceId": request.SourceID, "error": models.AsAppError(refreshErr)})
 			return nil, refreshErr
 		}
 		reporter.Update(1, "Snapshot refreshed")
-		a.emit("ducs:snapshot-ready", source)
+		a.emit("ducs:snapshot-ready", map[string]any{"projectId": request.ProjectID, "source": source})
 		return source, nil
 	})
 	return job, err

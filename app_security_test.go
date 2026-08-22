@@ -30,18 +30,28 @@ func TestBootstrapEventsAndWorkspaceNeverContainConnectionPassword(t *testing.T)
 		t.Fatal(err)
 	}
 	ws := workspace.New(db)
+	project, err := ws.InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
 	store := credentials.NewMemoryStore()
 	var events []connections.ConnectionInfo
 	connectionService := connections.NewService(db, session, store, extensions.NewManager(), ws, func(info connections.ConnectionInfo) { events = append(events, info) })
 	manager := jobs.NewManagerWithContext(ctx, 1, nil)
 	app := &App{ctx: ctx, cancel: cancel, db: db, workspace: ws, connections: connectionService, jobs: manager}
 	const password = "bootstrap-password-marker"
-	if _, err := connectionService.CreateConnection(ctx, connections.CreateConnectionRequest{Name: "Production", Kind: connections.KindPostgres, CatalogName: "prod", Password: password, Config: connections.ConnectionConfig{Postgres: &connections.PostgresConfig{Host: "localhost", Port: 5432, Database: "app", Username: "reader", SSLMode: "require", ConnectTimeoutSeconds: 10, PoolSize: 4}}}); err != nil {
+	if _, err := connectionService.CreateConnection(ctx, connections.CreateConnectionRequest{ProjectID: project.ID, Name: "Production", Kind: connections.KindPostgres, CatalogName: "prod", Password: password, Config: connections.ConnectionConfig{Postgres: &connections.PostgresConfig{Host: "localhost", Port: 5432, Database: "app", Username: "reader", SSLMode: "require", ConnectTimeoutSeconds: 10, PoolSize: 4}}}); err != nil {
 		t.Fatal(err)
 	}
 	state, err := app.Bootstrap()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !state.Ready || state.ActiveProjectID != project.ID || state.Workspace.Project.ID != project.ID {
+		t.Fatalf("unexpected scoped bootstrap state: %+v", state)
 	}
 	visible, err := json.Marshal(struct {
 		State  BootstrapState               `json:"state"`

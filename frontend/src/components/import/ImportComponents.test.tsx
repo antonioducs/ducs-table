@@ -17,6 +17,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 function source(status: SourceInfo["status"], rowCount: number | null = null): SourceInfo {
   return {
+    projectId: "project-1",
     id: "source-1",
     displayName: "orders.csv",
     tableName: "orders",
@@ -32,13 +33,14 @@ function source(status: SourceInfo["status"], rowCount: number | null = null): S
 describe("import presentation", () => {
   it("renders the exact empty-state copy and green drag feedback", () => {
     const onChoose = vi.fn();
-    const { rerender } = render(<EmptyState onChoose={onChoose} />);
+    const { rerender } = render(<EmptyState onChoose={onChoose} projectName="Analytics" />);
     expect(screen.getByText("Drop a data file anywhere")).toBeInTheDocument();
     expect(screen.getByText("CSV, TSV, JSON, JSONL or XLSX — processed locally")).toBeInTheDocument();
+    expect(screen.getByText("Add the first source to Analytics.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open data file" }));
     expect(onChoose).toHaveBeenCalledOnce();
 
-    rerender(<EmptyState onChoose={onChoose} dragActive />);
+    rerender(<EmptyState onChoose={onChoose} projectName="Analytics" dragActive />);
     expect(screen.getByText("Release to import files")).toHaveClass("text-primary");
   });
 
@@ -67,7 +69,7 @@ describe("import presentation", () => {
 
   it("confirms one workbook sheet", () => {
     const onConfirm = vi.fn();
-    render(<SheetPicker workbook={{ path: "/tmp/book.xlsx", displayName: "book.xlsx", sheets: ["Orders", "Customers"] }} open onOpenChange={vi.fn()} onConfirm={onConfirm} />);
+    render(<SheetPicker workbook={{ projectId: "project-1", path: "/tmp/book.xlsx", displayName: "book.xlsx", sheets: ["Orders", "Customers"] }} open onOpenChange={vi.fn()} onConfirm={onConfirm} />);
     fireEvent.click(screen.getByRole("radio", { name: /Customers/ }));
     fireEvent.click(screen.getByRole("button", { name: "Import sheet" }));
     expect(onConfirm).toHaveBeenCalledWith("Customers");

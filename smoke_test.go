@@ -29,6 +29,13 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 	}
 
 	ws := workspace.New(db)
+	project, err := ws.InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
 	imports := importers.New(db)
 	gridService := grid.New(db, ws)
 	queries := query.New(db)
@@ -36,16 +43,20 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 
 	customersPath := filepath.Join("testdata", "csv", "customers.csv")
 	ordersPath := filepath.Join("testdata", "json", "orders.json")
-	customers, err := imports.Materialize(ctx, importers.MaterializeRequest{Path: customersPath, DisplayName: "customers"})
+	customers, err := imports.Materialize(ctx, importers.MaterializeRequest{ProjectID: project.ID, Path: customersPath, DisplayName: "customers"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := imports.Materialize(ctx, importers.MaterializeRequest{Path: ordersPath, DisplayName: "orders"}); err != nil {
+	orders, err := imports.Materialize(ctx, importers.MaterializeRequest{ProjectID: project.ID, Path: ordersPath, DisplayName: "orders"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if customers.ProjectID != project.ID || orders.ProjectID != project.ID {
+		t.Fatalf("imports were not scoped to the active project: customers=%q orders=%q", customers.ProjectID, orders.ProjectID)
 	}
 
 	view, err := gridService.GetRows(ctx, grid.RowsRequest{
-		SourceID: customers.ID, Offset: 0, Limit: 250,
+		ProjectID: project.ID, SourceID: customers.ID, Offset: 0, Limit: 250,
 		VisibleColumns: []string{"customer_id", "name"},
 		Filters:        []grid.Filter{{Column: "segment", Type: "text", Operator: "equals", Value: "enterprise"}},
 		Sorts:          []grid.Sort{{Column: "name", Direction: "desc"}},
@@ -57,7 +68,7 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 		t.Fatalf("unexpected filtered view: %d rows, %d columns", len(view.Rows), len(view.Columns))
 	}
 
-	joined, err := queries.Run(ctx, `
+	joined, err := queries.Run(ctx, project.ID, `
 		SELECT
 			c.customer_id,
 			c.name,
@@ -73,21 +84,21 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 	if joined.RowCount != 3 {
 		t.Fatalf("join returned %d rows", joined.RowCount)
 	}
-	saved, err := queries.SaveResultAsTable(ctx, joined.Source.ID, "customer_summary")
+	saved, err := queries.SaveResultAsTable(ctx, project.ID, joined.Source.ID, "customer_summary")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.SQLName != "customer_summary" || saved.IsEphemeral {
+	if saved.ProjectID != project.ID || saved.SQLName != "customer_summary" || saved.IsEphemeral {
 		t.Fatalf("unexpected saved source: %+v", saved)
 	}
 
-	second, err := queries.Run(ctx, `SELECT name, total_spent FROM customer_summary WHERE total_spent >= 100 ORDER BY total_spent DESC`)
+	second, err := queries.Run(ctx, project.ID, `SELECT name, total_spent FROM customer_summary WHERE total_spent >= 100 ORDER BY total_spent DESC`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "customer_summary.csv")
 	if _, err := exports.ExportCSV(ctx, exportservice.CSVRequest{
-		SourceID: second.Source.ID, Destination: destination, Scope: exportservice.ScopeEntire,
+		ProjectID: project.ID, SourceID: second.Source.ID, Destination: destination, Scope: exportservice.ScopeEntire,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +127,7 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	state, err := workspace.New(reopened).Bootstrap(ctx)
+	state, err := workspace.New(reopened).Bootstrap(ctx, project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,5 +136,8 @@ func TestWorkspaceSmokeFlow(t *testing.T) {
 	}
 	if len(state.Results) != 0 {
 		t.Fatalf("ephemeral results survived reopen: %d", len(state.Results))
+	}
+	if state.Project.ID != project.ID || state.Project.Name != "My Workspace" {
+		t.Fatalf("unexpected reopened project: %+v", state.Project)
 	}
 }

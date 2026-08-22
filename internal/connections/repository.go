@@ -40,7 +40,7 @@ func (r *Repository) Get(ctx context.Context, id string) (ConnectionInfo, error)
 	if strings.TrimSpace(id) == "" {
 		return ConnectionInfo{}, models.NewError(models.CodeInvalidArgument, "Connection ID is required", nil)
 	}
-	info, err := scanConnection(r.db.SQL().QueryRowContext(ctx, connectionSelect+" WHERE id = ?", id))
+	info, err := scanConnection(r.db.SQL().QueryRowContext(ctx, connectionSelect+" WHERE c.id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return ConnectionInfo{}, models.NewError(models.CodeConnectionNotFound, "Connection was not found", map[string]any{"connectionId": id})
 	}
@@ -59,12 +59,21 @@ func (r *Repository) CatalogExists(ctx context.Context, catalog string, exceptID
 	return exists, nil
 }
 
-func (r *Repository) Create(ctx context.Context, info ConnectionInfo) error {
+func (r *Repository) Create(ctx context.Context, projectID string, info ConnectionInfo) error {
 	config, err := json.Marshal(info.Config)
 	if err != nil {
 		return models.NewError(models.CodeInvalidArgument, "Connection configuration is invalid", nil)
 	}
 	return r.db.WithTx(ctx, func(tx *sql.Tx) error {
+		var archivedAt sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM ducs_meta.projects WHERE id = ?`, projectID).Scan(&archivedAt); errors.Is(err, sql.ErrNoRows) {
+			return models.NewError(models.CodeProjectNotFound, "Project was not found", map[string]any{"projectId": projectID})
+		} else if err != nil {
+			return err
+		}
+		if archivedAt.Valid {
+			return models.NewError(models.CodeProjectArchived, "Archived projects cannot be changed", map[string]any{"projectId": projectID})
+		}
 		var exists bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ducs_meta.connections WHERE catalog_name = ?)`, info.CatalogName).Scan(&exists); err != nil {
 			return err
@@ -72,7 +81,10 @@ func (r *Repository) Create(ctx context.Context, info ConnectionInfo) error {
 		if exists {
 			return models.NewError(models.CodeConnectionAlreadyExists, "A connection already uses this SQL catalog alias", map[string]any{"catalogName": info.CatalogName})
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO ducs_meta.connections (id, name, kind, catalog_name, config_json, auto_connect, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, info.ID, info.Name, info.Kind, info.CatalogName, string(config), info.AutoConnect, info.CreatedAt, info.UpdatedAt)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO ducs_meta.connections (id, name, kind, catalog_name, config_json, auto_connect, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, info.ID, info.Name, info.Kind, info.CatalogName, string(config), info.AutoConnect, info.CreatedAt, info.UpdatedAt); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO ducs_meta.project_connections (project_id, connection_id, created_at) VALUES (?, ?, ?)`, projectID, info.ID, info.CreatedAt)
 		return err
 	})
 }
@@ -104,6 +116,9 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE ducs_meta.snapshots SET connection_id = NULL WHERE connection_id = ?`, id); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM ducs_meta.project_connections WHERE connection_id = ?`, id); err != nil {
+			return err
+		}
 		result, err := tx.ExecContext(ctx, `DELETE FROM ducs_meta.connections WHERE id = ?`, id)
 		if err != nil {
 			return err
@@ -115,14 +130,16 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	})
 }
 
-const connectionSelect = `SELECT id, name, kind, catalog_name, config_json, auto_connect, created_at, updated_at FROM ducs_meta.connections`
+const connectionSelect = `SELECT c.id, c.name, c.kind, c.catalog_name, c.config_json, c.auto_connect,
+	(SELECT COUNT(*) FROM ducs_meta.project_connections usage WHERE usage.connection_id = c.id),
+	c.created_at, c.updated_at FROM ducs_meta.connections c`
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanConnection(row rowScanner) (ConnectionInfo, error) {
 	var info ConnectionInfo
 	var kind, config string
-	if err := row.Scan(&info.ID, &info.Name, &kind, &info.CatalogName, &config, &info.AutoConnect, &info.CreatedAt, &info.UpdatedAt); err != nil {
+	if err := row.Scan(&info.ID, &info.Name, &kind, &info.CatalogName, &config, &info.AutoConnect, &info.ProjectCount, &info.CreatedAt, &info.UpdatedAt); err != nil {
 		return ConnectionInfo{}, err
 	}
 	info.Kind = ConnectionKind(kind)

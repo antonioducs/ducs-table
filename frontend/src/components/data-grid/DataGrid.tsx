@@ -52,6 +52,7 @@ export type GridViewState = {
 };
 
 export type DataGridProps = {
+  projectId?: string;
   source: SourceInfo;
   resource?: GridResourceRef;
   pagingStable?: boolean;
@@ -132,13 +133,13 @@ function validColumns(columns: readonly ColumnInfo[]): ColumnInfo[] {
   });
 }
 
-function safeLoadState(sourceId: string, columns: readonly ColumnInfo[]): ColumnState[] {
+function safeLoadState(projectId: string, sourceId: string, columns: readonly ColumnInfo[]): ColumnState[] {
   const columnIds = columns.map((column) => column.name);
   let persisted: ColumnState[] = [];
   try {
-    persisted = loadColumnState(sourceId, columnIds) ?? [];
+    persisted = loadColumnState(projectId, sourceId, columnIds) ?? [];
   } catch {
-    // The webview can deny localStorage; the in-memory layout still remains usable.
+    // The webview can deny session storage; the in-memory layout still remains usable.
   }
   const included = new Set(persisted.map((column) => column.colId));
   return [
@@ -147,17 +148,17 @@ function safeLoadState(sourceId: string, columns: readonly ColumnInfo[]): Column
   ];
 }
 
-function safeSaveState(sourceId: string, state: ColumnState[]): void {
+function safeSaveState(projectId: string, sourceId: string, state: ColumnState[]): void {
   try {
-    saveColumnState(sourceId, state);
+    saveColumnState(projectId, sourceId, state);
   } catch {
     // Keep layout changes in memory when persistence is unavailable.
   }
 }
 
-function safeClearState(sourceId: string): void {
+function safeClearState(projectId: string, sourceId: string): void {
   try {
-    clearColumnState(sourceId);
+    clearColumnState(projectId, sourceId);
   } catch {
     // Keep reset functional even when persistence is unavailable.
   }
@@ -216,7 +217,7 @@ function filterFor(column: ColumnInfo): string {
   }
 }
 
-function DataGridInner({ source, resource = { kind: "source", sourceId: source.id }, pagingStable = true, onReconnect, onViewStateChange }: DataGridProps) {
+function DataGridInner({ source, projectId = source.projectId, resource = { kind: "source", sourceId: source.id }, pagingStable = true, onReconnect, onViewStateChange }: DataGridProps) {
   const gridResource = useMemo<GridResourceRef>(() => resource.kind === "external"
     ? { kind: "external", relationId: resource.relationId }
     : { kind: "source", sourceId: resource.sourceId ?? source.id }, [resource.kind, resource.relationId, resource.sourceId, source.id]);
@@ -224,7 +225,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
   const cacheBlockSize = external ? REMOTE_CACHE_BLOCK_SIZE : LOCAL_CACHE_BLOCK_SIZE;
   const columns = useMemo(() => validColumns(source.columns), [source.columns]);
   const sourceKey = `${source.id}:${source.status}:${columns.map((column) => `${column.name}:${column.type}`).join("|")}`;
-  const initialColumnState = useMemo(() => safeLoadState(source.id, columns), [columns, source.id]);
+  const initialColumnState = useMemo(() => safeLoadState(projectId, source.id, columns), [columns, projectId, source.id]);
   const initialView = useMemo(() => viewFromColumnState(initialColumnState, columns), [columns, initialColumnState]);
   const previewRows = useMemo(() => safeRows(source.previewRows).slice(0, PREVIEW_ROW_LIMIT), [source.previewRows]);
 
@@ -295,20 +296,20 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
       const filters = adaptFilterModel(api.getFilterModel(), columns);
       columnStateRef.current = state;
       setColumnState(state);
-      if (persist) safeSaveState(source.id, state);
+      if (persist) safeSaveState(projectId, source.id, state);
       publishViewState(viewFromColumnState(state, columns, filters));
       return true;
     } catch {
       return false;
     }
-  }, [columns, publishViewState, source.id]);
+  }, [columns, projectId, publishViewState, source.id]);
 
   const updateWithoutGrid = useCallback((next: ColumnState[], filters = viewRef.current.filters) => {
     columnStateRef.current = next;
     setColumnState(next);
-    safeSaveState(source.id, next);
+    safeSaveState(projectId, source.id, next);
     publishViewState(viewFromColumnState(next, columns, filters));
-  }, [columns, publishViewState, source.id]);
+  }, [columns, projectId, publishViewState, source.id]);
 
   const columnDefs = useMemo<ColDef<DataRow>[]>(() => columns.map((column) => {
     const valueCategory = category(column);
@@ -367,6 +368,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
         publishViewState({ sorts, filters, visibleColumns });
 
         void bridge.GetRows({
+          projectId,
           resource: gridResource,
           offset: startRow,
           limit,
@@ -399,7 +401,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
         active = false;
       },
     };
-  }, [cacheBlockSize, columns, external, gridResource, publishViewState, ready, source.rowCount]);
+  }, [cacheBlockSize, columns, external, gridResource, projectId, publishViewState, ready, source.rowCount]);
 
   const onGridReady = useCallback((event: GridReadyEvent<DataRow>) => {
     apiRef.current = event.api;
@@ -477,7 +479,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
       try {
         api.resetColumnState();
         synchronizeFromApi(api);
-        safeClearState(source.id);
+        safeClearState(projectId, source.id);
         if (ready) api.purgeInfiniteCache();
         return;
       } catch {
@@ -487,9 +489,9 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
     const next = columns.map((column) => ({ colId: column.name, hide: false }));
     columnStateRef.current = next;
     setColumnState(next);
-    safeClearState(source.id);
+    safeClearState(projectId, source.id);
     publishViewState(viewFromColumnState(next, columns, viewRef.current.filters));
-  }, [columns, publishViewState, ready, source.id, synchronizeFromApi]);
+  }, [columns, projectId, publishViewState, ready, source.id, synchronizeFromApi]);
 
   const openCell = useCallback((event: CellDoubleClickedEvent<DataRow>) => {
     const rowIndex = event.node.rowIndex;
@@ -508,6 +510,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
     const requestId = ++cellRequestRef.current;
     setCellLoading(true);
     void bridge.GetCellValue({
+      projectId,
       resource: gridResource,
       rowIndex,
       column,
@@ -522,7 +525,7 @@ function DataGridInner({ source, resource = { kind: "source", sourceId: source.i
     }).finally(() => {
       if (cellRequestRef.current === requestId) setCellLoading(false);
     });
-  }, [columns, gridResource, ready]);
+  }, [columns, gridResource, projectId, ready]);
 
   const copyValue = useCallback(async () => {
     try {
@@ -755,7 +758,7 @@ function GridMessage({ title, detail, destructive = false }: { title: string; de
 
 export function DataGrid(props: DataGridProps) {
   const schemaKey = props.source.columns.map((column) => `${column.name}:${column.type}`).join("|");
-  return <DataGridInner key={`${props.resource?.kind ?? "source"}:${props.source.id}:${props.source.status}:${schemaKey}`} {...props} />;
+  return <DataGridInner key={`${props.projectId ?? props.source.projectId}:${props.resource?.kind ?? "source"}:${props.source.id}:${props.source.status}:${schemaKey}`} {...props} />;
 }
 
 export default DataGrid;

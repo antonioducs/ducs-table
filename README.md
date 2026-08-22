@@ -6,16 +6,22 @@ Duc's Table is a private, local-first macOS SQL workspace for files and database
 
 - Imports one or many data files from a native dialog or drag and drop.
 - Connects PostgreSQL as a stable provider and MongoDB as an experimental provider.
+- Organizes local sources, saved SQL, tabs, history, and connection links into switchable projects.
 - Browses external schemas/databases and relations lazily, including columns when needed.
 - Opens external relations in a read-only **Live** grid or copies them into an offline **Snapshot**.
 - Runs federated `SELECT`/`WITH` queries across local tables and attached databases.
 - Materializes every editor result into local `result.*` storage for fast paging and export after a database disconnects.
 - Saves query results as local tables, saves named SQL, and exports entire or filtered/sorted views to CSV.
-- Persists local datasets, snapshots, SQL, safe connection metadata, and lightweight layout preferences between launches.
+- Persists each project's SQL draft, valid tabs, 20 recent executions, and result-name sequence in the local DuckDB workspace.
+- Persists local datasets, snapshots, SQL, safe connection metadata, and lightweight global layout preferences between launches.
 
 Imported datasets, snapshots, and remote databases are read-only in the UI. Original files and remote data are never modified.
 
 ## Connections
+
+Connections and their Keychain credentials are global to the app. A project attaches a reference to an existing connection; attaching it to another project does not duplicate configuration or credentials. Removing a connection from one project does not disconnect or delete it, and editing it is visible in every project that uses it. The separate **Delete everywhere** action removes its global metadata, credential, and project links, while existing local snapshots remain available.
+
+Auto-connect runs only for connections linked to the project being opened. A connection already open for another project is reused and remains open so in-flight work is not interrupted.
 
 ### PostgreSQL — stable
 
@@ -147,7 +153,11 @@ Application state lives under:
 └── app.log
 ```
 
-DuckDB materializes imported files, snapshots, and query results into `workspace.duckdb`. This uses disk space in exchange for fast repeated filtering, SQL, and export. Ephemeral unsaved query results are removed at the next startup.
+All projects live in the same `workspace.duckdb`. DuckDB materializes imported files, snapshots, and query results there and stores project metadata plus the SQL editor session locally. This uses disk space in exchange for fast repeated filtering, SQL, export, and session restoration. Ephemeral unsaved query results are removed at the next startup, and stale result tabs are reconciled automatically.
+
+Existing workspaces are migrated automatically into a project named **My Workspace** without changing source IDs, physical tables, snapshots, saved SQL, connection IDs, timestamps, or Keychain items. New projects start empty and can attach global connections already configured in the app. Projects can be archived and restored; this release intentionally has no hard delete, duplicate, move/copy, or project import/export.
+
+Projects are organizational contexts, not security boundaries. Their tables still use shared `data` and `result` schemas in one DuckDB file. The app scopes normal UI and service operations by project, but SQL that explicitly names a known global physical table may still reference it.
 
 ## XLSX support
 
@@ -163,3 +173,4 @@ Workbook sheet names are inspected locally with Excelize. Data import uses DuckD
 - There is no built-in SSH tunnel, cloud IAM/OAuth flow, CDC, scheduler, incremental refresh, or Mongo aggregation builder.
 - `.xls`, Parquet UI, charts, MySQL, S3/Iceberg/DuckLake UI, XLSX export, and auto-update are not included.
 - Nested JSON/Mongo values are serialized rather than displayed as an expandable tree.
+- Projects do not provide access-control or data-isolation guarantees; use separate operating-system accounts/workspaces when a security boundary is required.

@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ConnectionTree, type ConnectionTreeProps } from "@/components/connections/ConnectionTree";
 
 export interface SidebarProps {
+  projectName?: string;
   sources: readonly SourceInfo[];
   savedQueries: readonly SavedQuery[];
   activeSourceId?: string;
@@ -140,15 +141,15 @@ export function Sidebar(props: SidebarProps) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-card" aria-label="Data sources and saved SQL">
       <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Workspace</span>
+        <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground" title={props.projectName}>{props.projectName ?? "Workspace"}</span>
         <Badge variant="muted" className="ml-auto">{tables.length} tables</Badge>
       </div>
       <TooltipProvider delayDuration={400}>
         <ScrollArea className="min-h-0 flex-1">
-          <SidebarSection title="Tables" icon={<Database className="size-3" aria-hidden="true" />} empty="Open a data file to begin">
+          <SidebarSection title="Tables" icon={<Database className="size-3" aria-hidden="true" />} empty={`Open a data file in ${props.projectName ?? "this project"} to begin`}>
             {tables.map((source) => <SourceRow key={source.id} source={source} active={source.id === props.activeSourceId} {...rowCallbacks} />)}
           </SidebarSection>
-          <SidebarSection title="Connections" icon={<DatabaseZap className="size-3" aria-hidden="true" />} empty="Connect a database to browse live data">
+          <SidebarSection title="Connections" icon={<DatabaseZap className="size-3" aria-hidden="true" />} empty={`Attach a database to ${props.projectName ?? "this project"}`}>
             {props.connectionTree ? <ConnectionTree {...props.connectionTree} /> : null}
           </SidebarSection>
           <SidebarSection title="Results" icon={<Table2 className="size-3" aria-hidden="true" />} empty="Run SQL to create a result">

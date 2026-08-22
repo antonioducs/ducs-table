@@ -60,11 +60,19 @@ func runLiveProvider(t *testing.T, request connections.CreateConnectionRequest) 
 		t.Fatal(err)
 	}
 	defer db.Close()
+	ws := workspace.New(db)
+	project, err := ws.InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
+	request.ProjectID = project.ID
 	session, err := federation.New(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws := workspace.New(db)
 	service := connections.NewService(db, session, credentials.NewMemoryStore(), extensions.NewManager(), ws, nil)
 	defer service.Shutdown()
 	created, err := service.CreateConnection(ctx, request)
@@ -74,22 +82,22 @@ func runLiveProvider(t *testing.T, request connections.CreateConnectionRequest) 
 	if err := service.TestConnection(ctx, connections.TestConnectionRequest{ID: created.ID}); err != nil {
 		t.Fatalf("test connection: %v", err)
 	}
-	if _, err := service.Connect(ctx, created.ID); err != nil {
+	if _, err := service.Connect(ctx, project.ID, created.ID); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	schemas, err := service.ListSchemas(ctx, created.ID)
+	schemas, err := service.ListSchemas(ctx, project.ID, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var relation models.ExternalRelationInfo
 	for _, schema := range schemas {
-		relations, listErr := service.ListRelations(ctx, connections.ListRelationsRequest{ConnectionID: created.ID, Schema: schema.Name})
+		relations, listErr := service.ListRelations(ctx, connections.ListRelationsRequest{ProjectID: project.ID, ConnectionID: created.ID, Schema: schema.Name})
 		if listErr != nil {
 			t.Logf("schema %s unavailable: %v", schema.Name, listErr)
 			continue
 		}
 		if len(relations) > 0 {
-			relation, err = service.GetExternalRelation(ctx, relations[0].ID)
+			relation, err = service.GetExternalRelation(ctx, project.ID, relations[0].ID)
 			if err == nil {
 				break
 			}
@@ -101,11 +109,11 @@ func runLiveProvider(t *testing.T, request connections.CreateConnectionRequest) 
 	if _, err := db.SQL().ExecContext(ctx, `CREATE TABLE data.live_marker AS SELECT 1 AS marker`); err != nil {
 		t.Fatal(err)
 	}
-	result, err := query.New(db, session).Run(ctx, `SELECT marker.marker, remote.* FROM data.live_marker marker CROSS JOIN `+relation.QualifiedName+` remote LIMIT 5`)
+	result, err := query.New(db, session).Run(ctx, project.ID, `SELECT marker.marker, remote.* FROM data.live_marker marker CROSS JOIN `+relation.QualifiedName+` remote LIMIT 5`)
 	if err != nil {
 		t.Fatalf("federated materialization: %v", err)
 	}
-	snapshot, err := service.CreateSnapshot(ctx, connections.SnapshotRequest{RelationID: relation.ID, DisplayName: "Live fixture snapshot"})
+	snapshot, err := service.CreateSnapshot(ctx, connections.SnapshotRequest{ProjectID: project.ID, RelationID: relation.ID, DisplayName: "Live fixture snapshot"})
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -113,19 +121,19 @@ func runLiveProvider(t *testing.T, request connections.CreateConnectionRequest) 
 	gridService.SetExternalResolver(service)
 	exporter := exports.New(db, gridService)
 	destination := filepath.Join(t.TempDir(), "result.csv")
-	if _, err := exporter.ExportCSV(ctx, exports.CSVRequest{Resource: models.GridResourceRef{Kind: "source", SourceID: result.Source.ID}, Destination: destination, Scope: exports.ScopeEntire}); err != nil {
+	if _, err := exporter.ExportCSV(ctx, exports.CSVRequest{ProjectID: project.ID, Resource: models.GridResourceRef{Kind: "source", SourceID: result.Source.ID}, Destination: destination, Scope: exports.ScopeEntire}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	if _, err := os.Stat(destination); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ws.GetSource(ctx, snapshot.ID); err != nil {
+	if _, err := ws.GetSource(ctx, project.ID, snapshot.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Disconnect(ctx, created.ID); err != nil {
+	if err := service.Disconnect(ctx, project.ID, created.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Connect(ctx, created.ID); err != nil {
+	if _, err := service.Connect(ctx, project.ID, created.ID); err != nil {
 		t.Fatalf("reconnect: %v", err)
 	}
 }

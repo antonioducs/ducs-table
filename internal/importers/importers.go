@@ -122,6 +122,10 @@ func previewColumns(rows *sql.Rows) ([]models.ColumnInfo, error) {
 // Materialize streams a source through DuckDB into an isolated staging table
 // and publishes table + metadata atomically only after count/schema succeed.
 func (s *Service) Materialize(ctx context.Context, request MaterializeRequest) (models.SourceInfo, error) {
+	request.ProjectID = strings.TrimSpace(request.ProjectID)
+	if request.ProjectID == "" {
+		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
 	file, err := ValidateFile(request.Path)
 	if err != nil {
 		return models.SourceInfo{}, err
@@ -231,11 +235,11 @@ func (s *Service) materializeAttempt(
 	}
 	now := time.Now().UTC()
 	source := models.SourceInfo{
-		ID: id, DisplayName: displayName, SQLName: finalName, Schema: "data",
+		ID: id, ProjectID: request.ProjectID, DisplayName: displayName, SQLName: finalName, Schema: "data",
 		SourceType: string(file.Type), SourcePath: file.Path, Sheet: request.Sheet,
 		RowCount: rowCount, Columns: columns, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := workspace.InsertSourceTx(ctx, tx, source); err != nil {
+	if err := workspace.InsertSourceTx(ctx, tx, request.ProjectID, source); err != nil {
 		return models.SourceInfo{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -247,6 +251,6 @@ func (s *Service) materializeAttempt(
 
 // MaterializePath is a compact synchronous API suitable for invocation from a
 // jobs.Task.
-func (s *Service) MaterializePath(ctx context.Context, path, displayName, sheet string, options Options) (models.SourceInfo, error) {
-	return s.Materialize(ctx, MaterializeRequest{Path: path, DisplayName: displayName, Sheet: sheet, Options: options})
+func (s *Service) MaterializePath(ctx context.Context, projectID, path, displayName, sheet string, options Options) (models.SourceInfo, error) {
+	return s.Materialize(ctx, MaterializeRequest{ProjectID: projectID, Path: path, DisplayName: displayName, Sheet: sheet, Options: options})
 }

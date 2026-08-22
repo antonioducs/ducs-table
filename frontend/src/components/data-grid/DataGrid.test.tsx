@@ -53,6 +53,7 @@ function source(overrides: Partial<SourceInfo> = {}): SourceInfo {
     ],
     previewRows: [{ name: "Ada", age: 36 }],
     ...overrides,
+    projectId: overrides.projectId ?? "project-1",
   };
 }
 
@@ -62,7 +63,7 @@ describe("DataGrid", () => {
   });
 
   beforeEach(() => {
-    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("searches and toggles columns from the Columns menu", async () => {

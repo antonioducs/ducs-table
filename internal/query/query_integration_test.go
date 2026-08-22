@@ -15,32 +15,42 @@ import (
 	"ducs-table/internal/workspace"
 )
 
-func queryFixture(t *testing.T) (*database.DB, apppaths.Paths, models.SourceInfo, models.SourceInfo) {
+func queryFixture(t *testing.T) (*database.DB, apppaths.Paths, string, models.SourceInfo, models.SourceInfo) {
 	t.Helper()
+	ctx := context.Background()
 	paths, err := apppaths.ResolveAt(filepath.Join(t.TempDir(), "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := database.Open(context.Background(), paths)
+	db, err := database.Open(ctx, paths)
 	if err != nil {
 		t.Fatal(err)
+	}
+	project, err := workspace.New(db).InitialProject(ctx)
+	if err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		_ = db.Close()
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
 	}
 	importer := importers.New(db)
-	people, err := importer.Materialize(context.Background(), importers.MaterializeRequest{Path: filepath.Join("..", "..", "testdata", "people.csv")})
+	people, err := importer.Materialize(ctx, importers.MaterializeRequest{ProjectID: project.ID, Path: filepath.Join("..", "..", "testdata", "people.csv")})
 	if err != nil {
 		_ = db.Close()
 		t.Fatal(err)
 	}
-	orders, err := importer.Materialize(context.Background(), importers.MaterializeRequest{Path: filepath.Join("..", "..", "testdata", "orders.tsv")})
+	orders, err := importer.Materialize(ctx, importers.MaterializeRequest{ProjectID: project.ID, Path: filepath.Join("..", "..", "testdata", "orders.tsv")})
 	if err != nil {
 		_ = db.Close()
 		t.Fatal(err)
 	}
-	return db, paths, people, orders
+	return db, paths, project.ID, people, orders
 }
 
 func TestRunJoinSaveCopyMoveAndClose(t *testing.T) {
-	db, _, people, orders := queryFixture(t)
+	db, _, projectID, people, orders := queryFixture(t)
 	defer db.Close()
 	ctx := context.Background()
 	service := New(db)
@@ -52,14 +62,14 @@ func TestRunJoinSaveCopyMoveAndClose(t *testing.T) {
 		ORDER BY p.name`,
 		database.QuoteQualified(people.Schema, people.SQLName),
 		database.QuoteQualified(orders.Schema, orders.SQLName))
-	result, err := service.Run(ctx, joinSQL)
+	result, err := service.Run(ctx, projectID, joinSQL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Source.Schema != "result" || !result.Source.IsEphemeral || result.RowCount != 2 || len(result.Columns) != 3 {
+	if result.Source.ProjectID != projectID || result.Source.Schema != "result" || !result.Source.IsEphemeral || result.RowCount != 2 || len(result.Columns) != 3 {
 		t.Fatalf("unexpected query result: %#v", result)
 	}
-	page, err := grid.New(db).Rows(ctx, grid.RowsRequest{SourceID: result.Source.ID, Limit: 10})
+	page, err := grid.New(db).Rows(ctx, grid.RowsRequest{ProjectID: projectID, SourceID: result.Source.ID, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,35 +77,35 @@ func TestRunJoinSaveCopyMoveAndClose(t *testing.T) {
 		t.Fatalf("unexpected materialized rows: %#v", page.Rows)
 	}
 
-	copied, err := service.SaveResult(ctx, SaveResultRequest{ResultID: result.Source.ID, DisplayName: "Order totals", Copy: true})
+	copied, err := service.SaveResult(ctx, SaveResultRequest{ProjectID: projectID, ResultID: result.Source.ID, DisplayName: "Order totals", Copy: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if copied.Schema != "data" || copied.IsEphemeral || copied.ID == result.Source.ID {
+	if copied.ProjectID != projectID || copied.Schema != "data" || copied.IsEphemeral || copied.ID == result.Source.ID {
 		t.Fatalf("unexpected copied source: %#v", copied)
 	}
-	if _, err := workspace.New(db).GetSource(ctx, result.Source.ID); err != nil {
+	if _, err := workspace.New(db).GetSource(ctx, projectID, result.Source.ID); err != nil {
 		t.Fatalf("copy removed original result: %v", err)
 	}
-	if err := service.CloseResult(ctx, result.Source.ID); err != nil {
+	if err := service.CloseResult(ctx, projectID, result.Source.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.New(db).GetSource(ctx, copied.ID); err != nil {
+	if _, err := workspace.New(db).GetSource(ctx, projectID, copied.ID); err != nil {
 		t.Fatalf("closing result removed persistent copy: %v", err)
 	}
 
-	moveResult, err := service.Run(ctx, `SELECT 1 AS id, 'semi;colon' AS label; -- trailing comment`)
+	moveResult, err := service.Run(ctx, projectID, `SELECT 1 AS id, 'semi;colon' AS label; -- trailing comment`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	moved, err := service.SaveResultAsTable(ctx, moveResult.Source.ID, "Pinned result")
+	moved, err := service.SaveResultAsTable(ctx, projectID, moveResult.Source.ID, "Pinned result")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.ID != moveResult.Source.ID || moved.Schema != "data" || moved.IsEphemeral {
+	if moved.ID != moveResult.Source.ID || moved.ProjectID != projectID || moved.Schema != "data" || moved.IsEphemeral {
 		t.Fatalf("unexpected moved result: %#v", moved)
 	}
-	err = service.CloseResult(ctx, moved.ID)
+	err = service.CloseResult(ctx, projectID, moved.ID)
 	var appErr *models.AppError
 	if !errors.As(err, &appErr) || appErr.Code != models.CodeInvalidArgument {
 		t.Fatalf("persistent source was not protected from CloseResult: %#v", err)
@@ -103,9 +113,9 @@ func TestRunJoinSaveCopyMoveAndClose(t *testing.T) {
 }
 
 func TestStartupRemovesEphemeralResultsOnly(t *testing.T) {
-	db, paths, people, _ := queryFixture(t)
+	db, paths, projectID, people, _ := queryFixture(t)
 	service := New(db)
-	result, err := service.Run(context.Background(), `SELECT 42 AS answer`)
+	result, err := service.Run(context.Background(), projectID, `SELECT 42 AS answer`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +128,7 @@ func TestStartupRemovesEphemeralResultsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	state, err := workspace.New(reopened).Bootstrap(context.Background())
+	state, err := workspace.New(reopened).Bootstrap(context.Background(), projectID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +138,7 @@ func TestStartupRemovesEphemeralResultsOnly(t *testing.T) {
 	if len(state.Datasets) != 2 {
 		t.Fatalf("persistent datasets were lost: %#v", state.Datasets)
 	}
-	if _, err := workspace.New(reopened).GetSource(context.Background(), people.ID); err != nil {
+	if _, err := workspace.New(reopened).GetSource(context.Background(), projectID, people.ID); err != nil {
 		t.Fatalf("persistent source unavailable after reopen: %v", err)
 	}
 	exists, err := database.TableExists(context.Background(), reopened.SQL(), "result", result.Source.SQLName)
@@ -137,5 +147,42 @@ func TestStartupRemovesEphemeralResultsOnly(t *testing.T) {
 	}
 	if exists {
 		t.Fatal("ephemeral result table survived reopen")
+	}
+}
+
+func TestSaveAndCloseRejectResultFromAnotherProject(t *testing.T) {
+	db, _, projectA, _, _ := queryFixture(t)
+	defer db.Close()
+	ctx := context.Background()
+	ws := workspace.New(db)
+	projectB, err := ws.CreateProject(ctx, "Project B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(db)
+	result, err := service.Run(ctx, projectA, `SELECT 7 AS value`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Source.ProjectID != projectA {
+		t.Fatalf("query result project = %q, want %q", result.Source.ProjectID, projectA)
+	}
+
+	_, err = service.SaveResult(ctx, SaveResultRequest{
+		ProjectID: projectB.ID, ResultID: result.Source.ID, DisplayName: "Stolen result",
+	})
+	var appErr *models.AppError
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeSourceNotFound {
+		t.Fatalf("cross-project save error = %#v, want %s", err, models.CodeSourceNotFound)
+	}
+	err = service.CloseResult(ctx, projectB.ID, result.Source.ID)
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeSourceNotFound {
+		t.Fatalf("cross-project close error = %#v, want %s", err, models.CodeSourceNotFound)
+	}
+	if _, err := ws.GetSource(ctx, projectA, result.Source.ID); err != nil {
+		t.Fatalf("cross-project operations changed project A result: %v", err)
+	}
+	if err := service.CloseResult(ctx, projectA, result.Source.ID); err != nil {
+		t.Fatalf("project A could not close its result: %v", err)
 	}
 }

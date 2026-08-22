@@ -1,6 +1,6 @@
 import type { ColumnState } from "ag-grid-community";
 
-const PREFIX = "ducs-table:columns:v1:";
+const PREFIX = "ducs-table:columns:v2:";
 
 export interface PersistedColumnState {
   colId: string;
@@ -21,14 +21,15 @@ function isColumnState(value: unknown): value is PersistedColumnState {
   );
 }
 
-export function columnStateKey(sourceId: string): string {
-  return `${PREFIX}${sourceId}`;
+export function columnStateKey(projectId: string, sourceId: string): string {
+  return `${PREFIX}${projectId}:${sourceId}`;
 }
 
 export function saveColumnState(
+  projectId: string,
   sourceId: string,
   state: ColumnState[],
-  storage: Pick<Storage, "setItem"> = localStorage,
+  storage: Pick<Storage, "setItem"> = sessionStorage,
 ): void {
   const compact: PersistedColumnState[] = state.map(({ colId, hide, width, sort, sortIndex }) => ({
     colId,
@@ -37,15 +38,16 @@ export function saveColumnState(
     sort: sort ?? undefined,
     sortIndex: sortIndex ?? undefined,
   }));
-  storage.setItem(columnStateKey(sourceId), JSON.stringify(compact));
+  storage.setItem(columnStateKey(projectId, sourceId), JSON.stringify(compact));
 }
 
 export function loadColumnState(
+  projectId: string,
   sourceId: string,
   validColumns: readonly string[],
-  storage: Pick<Storage, "getItem"> = localStorage,
+  storage: Pick<Storage, "getItem"> = sessionStorage,
 ): ColumnState[] | undefined {
-  const raw = storage.getItem(columnStateKey(sourceId));
+  const raw = storage.getItem(columnStateKey(projectId, sourceId));
   if (!raw) return undefined;
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -59,8 +61,9 @@ export function loadColumnState(
 }
 
 export function clearColumnState(
+  projectId: string,
   sourceId: string,
-  storage: Pick<Storage, "removeItem"> = localStorage,
+  storage: Pick<Storage, "removeItem"> = sessionStorage,
 ): void {
-  storage.removeItem(columnStateKey(sourceId));
+  storage.removeItem(columnStateKey(projectId, sourceId));
 }

@@ -43,7 +43,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 			t.Fatalf("schema %q does not exist", schema)
 		}
 	}
-	for _, table := range []string{"datasets", "saved_queries"} {
+	for _, table := range []string{"schema_migrations", "projects", "project_connections", "project_sessions", "datasets", "saved_queries", "connections", "snapshots"} {
 		exists, err := TableExists(ctx, db.SQL(), "ducs_meta", table)
 		if err != nil {
 			t.Fatal(err)
@@ -51,6 +51,19 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		if !exists {
 			t.Fatalf("table %q does not exist", table)
 		}
+	}
+	var versions, projects, sessions int
+	if err := db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM ducs_meta.schema_migrations WHERE version IN (1, 2, 3)`).Scan(&versions); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM ducs_meta.projects WHERE name = 'My Workspace'`).Scan(&projects); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM ducs_meta.project_sessions`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if versions != 3 || projects != 1 || sessions != 1 {
+		t.Fatalf("versions=%d projects=%d sessions=%d", versions, projects, sessions)
 	}
 }
 

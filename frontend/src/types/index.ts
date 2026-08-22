@@ -1,9 +1,46 @@
-export type SourceStatus =
-  | "preview"
-  | "preparing"
-  | "ready"
-  | "failed"
-  | "cancelled";
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  archivedAt?: string;
+  lastOpenedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectTabReference {
+  id: string;
+  kind: "local" | "external" | "placeholder";
+  title: string;
+  sourceId?: string;
+  relationId?: string;
+  connectionId?: string;
+  catalog?: string;
+  schema?: string;
+  relation?: string;
+  relationType?: string;
+  isResult?: boolean;
+  placeholderReason?: "disconnected" | "missing";
+}
+
+export interface QueryHistoryEntry {
+  id: string;
+  sql: string;
+  ranAt: string;
+  durationMs?: number;
+  status: "success" | "error";
+}
+
+export interface ProjectSession {
+  version: number;
+  sqlDraft: string;
+  tabs: ProjectTabReference[];
+  activeTabId?: string;
+  history: QueryHistoryEntry[];
+  resultSequence: number;
+}
+
+export type SourceStatus = "preview" | "preparing" | "ready" | "failed" | "cancelled";
 
 export type SourceKind =
   | "csv"
@@ -26,6 +63,7 @@ export interface ColumnInfo {
 export type DataRow = Record<string, unknown>;
 
 export interface SourceInfo {
+  projectId: string;
   id: string;
   displayName: string;
   tableName: string;
@@ -37,12 +75,24 @@ export interface SourceInfo {
   status: SourceStatus;
   isEphemeral: boolean;
   columns: ColumnInfo[];
+  /** Transient bridge payload only. The application store strips rows before storage. */
   previewRows?: DataRow[];
   error?: AppErrorInfo;
   originalSQL?: string;
   createdAt?: string;
   updatedAt?: string;
   snapshot?: SnapshotOrigin;
+}
+
+export interface SourcePreview {
+  projectId: string;
+  source: SourceInfo;
+  rows?: DataRow[];
+}
+
+export interface PreviewSource extends SourceInfo {
+  projectId: string;
+  previewRows?: DataRow[];
 }
 
 export interface SnapshotOrigin {
@@ -98,6 +148,7 @@ export interface ConnectionInfo {
   hasSecret: boolean;
   status: ConnectionStatus;
   lastError?: AppErrorInfo;
+  projectCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -141,6 +192,7 @@ export interface AppErrorInfo {
 }
 
 export interface SavedQuery {
+  projectId: string;
   id: string;
   name: string;
   sql: string;
@@ -148,14 +200,10 @@ export interface SavedQuery {
   updatedAt?: string;
 }
 
-export type JobState =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type JobState = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface Job {
+  projectId: string;
   id: string;
   kind: string;
   label?: string;
@@ -171,13 +219,26 @@ export interface Job {
   finishedAt?: string;
 }
 
-export interface BootstrapState {
+export interface ProjectWorkspace {
+  project: Project;
   sources: SourceInfo[];
-  connections: ConnectionInfo[];
   savedQueries: SavedQuery[];
+  connections: ConnectionInfo[];
+  externalRelations?: ExternalRelationInfo[];
+  session: ProjectSession;
+  warnings?: AppErrorInfo[];
+}
+
+export interface Bootstrap {
+  projects: Project[];
+  activeProjectId?: string;
+  workspace?: ProjectWorkspace;
   jobs: Job[];
   ready?: boolean;
 }
+
+/** Kept as an alias for callers compiled against the first frontend contract. */
+export type BootstrapState = Bootstrap;
 
 export type SortDirection = "asc" | "desc";
 
@@ -210,6 +271,7 @@ export interface RowFilter {
 }
 
 export interface RowsRequest {
+  projectId: string;
   resource: GridResourceRef;
   sourceId?: string;
   offset: number;
@@ -232,16 +294,16 @@ export interface RowsResponse {
 }
 
 export interface CountRowsRequest {
+  projectId: string;
   resource: GridResourceRef;
   sourceId?: string;
   filters?: RowFilter[];
 }
 
-export interface CountRowsResult {
-  count: number | null;
-}
+export interface CountRowsResult { count: number | null }
 
 export interface GetCellValueRequest {
+  projectId: string;
   resource: GridResourceRef;
   sourceId?: string;
   rowIndex: number;
@@ -250,9 +312,7 @@ export interface GetCellValueRequest {
   filters?: RowFilter[];
 }
 
-export interface CellValueResult {
-  value: unknown;
-}
+export interface CellValueResult { value: unknown }
 
 export interface ImportOptions {
   delimiter?: string;
@@ -262,39 +322,43 @@ export interface ImportOptions {
 }
 
 export interface ImportPathsRequest {
+  projectId: string;
   paths: string[];
   options?: ImportOptions;
 }
 
 export interface WorkbookSheets {
+  projectId: string;
   path: string;
   displayName?: string;
   sheets: string[];
 }
 
 export interface ImportPathsResult {
+  projectId: string;
   paths?: string[];
-  sources?: SourceInfo[];
+  sources?: PreviewSource[];
   jobs?: Job[];
   workbooks?: WorkbookSheets[];
 }
 
 export interface XLSXImportRequest {
+  projectId: string;
   path: string;
   sheets: string[];
   options?: ImportOptions;
 }
 
 export interface ImportStartResult {
-  sources: SourceInfo[];
+  projectId: string;
+  sources: PreviewSource[];
   jobs: Job[];
 }
 
-export interface QueryRequest {
-  sql: string;
-}
+export interface QueryRequest { projectId: string; sql: string }
 
 export interface QueryResult {
+  projectId: string;
   source: SourceInfo;
   columns?: ColumnInfo[];
   rowCount?: number;
@@ -302,20 +366,13 @@ export interface QueryResult {
   originalSQL?: string;
 }
 
-export interface SaveQueryRequest {
-  id?: string;
-  name: string;
-  sql: string;
-}
-
-export interface SaveResultAsTableRequest {
-  resultId: string;
-  displayName: string;
-}
+export interface SaveQueryRequest { projectId: string; id?: string; name: string; sql: string }
+export interface SaveResultAsTableRequest { projectId: string; resultId: string; displayName: string }
 
 export type ExportScope = "entire" | "current-view";
 
 export interface ExportRequest {
+  projectId: string;
   resource: GridResourceRef;
   sourceId?: string;
   destination?: string;
@@ -325,30 +382,33 @@ export interface ExportRequest {
   visibleColumns?: string[];
 }
 
-export interface ExportResult {
-  path: string;
-  size: number;
-}
+export interface ExportResult { path: string; size: number }
 
+export interface ProjectSourceEvent { projectId: string; source: SourceInfo }
+export interface ProjectPreviewEvent { projectId: string; source: PreviewSource }
 export interface DatasetFailedEvent {
+  projectId: string;
   sourceId: string;
   source?: SourceInfo;
   error: AppErrorInfo;
 }
-
-export interface FileDropEvent {
-  paths: string[];
+export interface SnapshotFailedEvent {
+  projectId: string;
+  sourceId?: string;
+  relationId?: string;
+  error: AppErrorInfo;
 }
+export interface FileDropEvent { projectId?: string; paths: string[] }
 
 export type BridgeEventMap = {
   "ducs:job-updated": Job;
-  "ducs:dataset-preview": SourceInfo | { source: SourceInfo };
-  "ducs:dataset-ready": SourceInfo | { source: SourceInfo };
+  "ducs:dataset-preview": ProjectPreviewEvent;
+  "ducs:dataset-ready": ProjectSourceEvent;
   "ducs:dataset-failed": DatasetFailedEvent;
-  "ducs:result-ready": QueryResult | SourceInfo;
-  "ducs:file-drop": FileDropEvent | string[];
+  "ducs:result-ready": ProjectSourceEvent;
+  "ducs:file-drop": FileDropEvent;
   "ducs:connection-updated": ConnectionInfo;
-  "ducs:catalog-invalidated": { connectionId: string };
-  "ducs:snapshot-ready": SourceInfo;
-  "ducs:snapshot-failed": { sourceId?: string; relationId?: string; error: AppErrorInfo };
+  "ducs:catalog-invalidated": { projectId: string; connectionId: string };
+  "ducs:snapshot-ready": ProjectSourceEvent;
+  "ducs:snapshot-failed": SnapshotFailedEvent;
 };

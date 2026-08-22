@@ -22,6 +22,7 @@ type Filter struct {
 }
 
 type RowsRequest struct {
+	ProjectID      string                 `json:"projectId"`
 	Resource       models.GridResourceRef `json:"resource"`
 	SourceID       string                 `json:"sourceId"`
 	Offset         int64                  `json:"offset"`
@@ -46,13 +47,14 @@ type RowsResponse struct {
 // SelectRequest is shared with export. A zero Limit means no pagination when
 // passed to BuildSelect with paginate=false.
 type SelectRequest struct {
-	Resource models.GridResourceRef
-	SourceID string
-	Columns  []string
-	Sorts    []Sort
-	Filters  []Filter
-	Offset   int64
-	Limit    int
+	ProjectID string
+	Resource  models.GridResourceRef
+	SourceID  string
+	Columns   []string
+	Sorts     []Sort
+	Filters   []Filter
+	Offset    int64
+	Limit     int
 }
 
 // BuiltSelect is safe to execute: every identifier was resolved against the
@@ -67,6 +69,6 @@ type BuiltSelect struct {
 }
 
 type ExternalResolver interface {
-	ResolveExternal(context.Context, string) (models.ExternalRelationInfo, error)
+	ResolveExternal(context.Context, string, string) (models.ExternalRelationInfo, error)
 	WithFederatedConn(context.Context, func(*sql.Conn) error) error
 }

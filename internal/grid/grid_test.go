@@ -15,28 +15,36 @@ import (
 	"ducs-table/internal/workspace"
 )
 
-func gridFixture(t *testing.T) (*Service, models.SourceInfo) {
+func gridFixture(t *testing.T) (*Service, models.SourceInfo, string) {
 	t.Helper()
+	ctx := context.Background()
 	paths, err := apppaths.ResolveAt(filepath.Join(t.TempDir(), "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := database.Open(context.Background(), paths)
+	db, err := database.Open(ctx, paths)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	source, err := importers.New(db).Materialize(context.Background(), importers.MaterializeRequest{
-		Path: filepath.Join("..", "..", "testdata", "people.csv"),
+	project, err := workspace.New(db).InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
+	source, err := importers.New(db).Materialize(ctx, importers.MaterializeRequest{
+		ProjectID: project.ID, Path: filepath.Join("..", "..", "testdata", "people.csv"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(db), source
+	return New(db), source, project.ID
 }
 
 func TestSyntheticLargeDatasetBlock(t *testing.T) {
-	service, _ := gridFixture(t)
+	service, _, projectID := gridFixture(t)
 	ctx := context.Background()
 	id, err := models.NewID()
 	if err != nil {
@@ -47,15 +55,16 @@ func TestSyntheticLargeDatasetBlock(t *testing.T) {
 			return err
 		}
 		now := time.Now().UTC()
-		return workspace.InsertSourceTx(ctx, tx, models.SourceInfo{
-			ID: id, DisplayName: "synthetic_large", SQLName: "synthetic_large", Schema: "data",
+		return workspace.InsertSourceTx(ctx, tx, projectID, models.SourceInfo{
+			ProjectID: projectID,
+			ID:        id, DisplayName: "synthetic_large", SQLName: "synthetic_large", Schema: "data",
 			SourceType: "synthetic", RowCount: 100000, CreatedAt: now, UpdatedAt: now,
 		})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := service.GetRows(ctx, RowsRequest{SourceID: id, Offset: 50000, Limit: 250})
+	page, err := service.GetRows(ctx, RowsRequest{ProjectID: projectID, SourceID: id, Offset: 50000, Limit: 250})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +74,10 @@ func TestSyntheticLargeDatasetBlock(t *testing.T) {
 }
 
 func TestRowsPaginationSortAndProjection(t *testing.T) {
-	service, source := gridFixture(t)
+	service, source, projectID := gridFixture(t)
 	ctx := context.Background()
 	response, err := service.Rows(ctx, RowsRequest{
-		SourceID: source.ID, Limit: 2,
+		ProjectID: projectID, SourceID: source.ID, Limit: 2,
 		Sorts:          []Sort{{Column: "age", Direction: "desc"}},
 		VisibleColumns: []string{"name", "age"},
 	})
@@ -88,11 +97,11 @@ func TestRowsPaginationSortAndProjection(t *testing.T) {
 		t.Fatalf("visible column order changed: %#v", response.Columns)
 	}
 
-	first, err := service.Rows(ctx, RowsRequest{SourceID: source.ID, Limit: 2})
+	first, err := service.Rows(ctx, RowsRequest{ProjectID: projectID, SourceID: source.ID, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Rows(ctx, RowsRequest{SourceID: source.ID, Offset: 2, Limit: 2})
+	second, err := service.Rows(ctx, RowsRequest{ProjectID: projectID, SourceID: source.ID, Offset: 2, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +111,7 @@ func TestRowsPaginationSortAndProjection(t *testing.T) {
 }
 
 func TestTypedFilters(t *testing.T) {
-	service, source := gridFixture(t)
+	service, source, projectID := gridFixture(t)
 	ctx := context.Background()
 	tests := []struct {
 		name   string
@@ -126,7 +135,7 @@ func TestTypedFilters(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := service.CountRows(ctx, source.ID, []Filter{test.filter})
+			got, err := service.CountRows(ctx, projectID, source.ID, []Filter{test.filter})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,17 +147,38 @@ func TestTypedFilters(t *testing.T) {
 }
 
 func TestBadColumnAndFilterTypeAreRejected(t *testing.T) {
-	service, source := gridFixture(t)
+	service, source, projectID := gridFixture(t)
 	_, err := service.Rows(context.Background(), RowsRequest{
-		SourceID: source.ID, Limit: 10,
+		ProjectID: projectID, SourceID: source.ID, Limit: 10,
 		Sorts: []Sort{{Column: `age; DROP TABLE data.people`, Direction: "asc"}},
 	})
 	var appErr *models.AppError
 	if !errors.As(err, &appErr) || appErr.Code != models.CodeColumnNotFound {
 		t.Fatalf("bad column error = %#v", err)
 	}
-	_, err = service.CountRows(context.Background(), source.ID, []Filter{{Column: "name", Type: "number", Operator: ">", Value: 1}})
+	_, err = service.CountRows(context.Background(), projectID, source.ID, []Filter{{Column: "name", Type: "number", Operator: ">", Value: 1}})
 	if !errors.As(err, &appErr) || appErr.Code != models.CodeInvalidArgument {
 		t.Fatalf("bad filter type error = %#v", err)
+	}
+}
+
+func TestRowsRejectSourceFromAnotherProject(t *testing.T) {
+	service, source, projectA := gridFixture(t)
+	ctx := context.Background()
+	projectB, err := workspace.New(service.db).CreateProject(ctx, "Project B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Rows(ctx, RowsRequest{ProjectID: projectB.ID, SourceID: source.ID, Limit: 10})
+	var appErr *models.AppError
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeSourceNotFound {
+		t.Fatalf("cross-project grid error = %#v, want %s", err, models.CodeSourceNotFound)
+	}
+	page, err := service.Rows(ctx, RowsRequest{ProjectID: projectA, SourceID: source.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("project A source became unavailable: %v", err)
+	}
+	if len(page.Rows) != 4 {
+		t.Fatalf("project A rows = %d, want 4", len(page.Rows))
 	}
 }

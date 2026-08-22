@@ -12,27 +12,26 @@ function memoryStorage() {
 }
 
 describe("column state persistence", () => {
-  it("stores order, visibility and widths per source", () => {
+  it("stores order, visibility and widths per project and source", () => {
     const storage = memoryStorage();
-    saveColumnState("source-a", [
+    saveColumnState("project-a", "source-a", [
       { colId: "name", hide: false, width: 220 },
       { colId: "email", hide: true, width: 180 },
     ], storage);
-    expect(loadColumnState("source-a", ["name", "email"], storage)).toEqual([
+    expect(loadColumnState("project-a", "source-a", ["name", "email"], storage)).toEqual([
       { colId: "name", hide: false, width: 220 },
       { colId: "email", hide: true, width: 180 },
     ]);
-    expect(loadColumnState("source-b", ["name"], storage)).toBeUndefined();
+    expect(loadColumnState("project-b", "source-a", ["name"], storage)).toBeUndefined();
   });
 
   it("drops stale columns and recovers from malformed JSON", () => {
     const storage = memoryStorage();
-    storage.setItem(columnStateKey("source-a"), JSON.stringify([{ colId: "old", width: 100 }, { colId: "name", width: 200 }]));
-    expect(loadColumnState("source-a", ["name"], storage)).toEqual([{ colId: "name", width: 200 }]);
-    storage.setItem(columnStateKey("source-a"), "{");
-    expect(loadColumnState("source-a", ["name"], storage)).toBeUndefined();
-    clearColumnState("source-a", storage);
-    expect(storage.values.has(columnStateKey("source-a"))).toBe(false);
+    storage.setItem(columnStateKey("project-a", "source-a"), JSON.stringify([{ colId: "old", width: 100 }, { colId: "name", width: 200 }]));
+    expect(loadColumnState("project-a", "source-a", ["name"], storage)).toEqual([{ colId: "name", width: 200 }]);
+    storage.setItem(columnStateKey("project-a", "source-a"), "{");
+    expect(loadColumnState("project-a", "source-a", ["name"], storage)).toBeUndefined();
+    clearColumnState("project-a", "source-a", storage);
+    expect(storage.values.has(columnStateKey("project-a", "source-a"))).toBe(false);
   });
 });
-

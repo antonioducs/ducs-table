@@ -9,15 +9,18 @@ import (
 
 	"ducs-table/internal/database"
 	"ducs-table/internal/models"
+	"ducs-table/internal/workspace"
 )
 
 type fakeExternalResolver struct {
 	db        *database.DB
 	relation  models.ExternalRelationInfo
 	withCalls int
+	projectID string
 }
 
-func (f *fakeExternalResolver) ResolveExternal(context.Context, string) (models.ExternalRelationInfo, error) {
+func (f *fakeExternalResolver) ResolveExternal(_ context.Context, projectID, _ string) (models.ExternalRelationInfo, error) {
+	f.projectID = projectID
 	return f.relation, nil
 }
 func (f *fakeExternalResolver) WithFederatedConn(ctx context.Context, fn func(*sql.Conn) error) error {
@@ -30,6 +33,18 @@ func (f *fakeExternalResolver) WithFederatedConn(ctx context.Context, fn func(*s
 	return fn(conn)
 }
 
+func liveGridProjectID(t *testing.T, db *database.DB) string {
+	t.Helper()
+	project, err := workspace.New(db).InitialProject(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
+	return project.ID
+}
+
 func TestLiveGridUsesLimitPlusOneWithoutCountOrRowID(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.OpenPath(ctx, filepath.Join(t.TempDir(), "workspace.duckdb"))
@@ -37,6 +52,7 @@ func TestLiveGridUsesLimitPlusOneWithoutCountOrRowID(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	projectID := liveGridProjectID(t, db)
 	if _, err := db.SQL().ExecContext(ctx, `CREATE TABLE main.live_rows(id INTEGER, value VARCHAR)`); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +63,7 @@ func TestLiveGridUsesLimitPlusOneWithoutCountOrRowID(t *testing.T) {
 	service := New(db)
 	service.SetExternalResolver(resolver)
 	resource := models.GridResourceRef{Kind: "external", RelationID: "relation"}
-	built, err := service.BuildSelect(ctx, SelectRequest{Resource: resource, Limit: 2}, true)
+	built, err := service.BuildSelect(ctx, SelectRequest{ProjectID: projectID, Resource: resource, Limit: 2}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +73,7 @@ func TestLiveGridUsesLimitPlusOneWithoutCountOrRowID(t *testing.T) {
 	if got := built.Args[len(built.Args)-2]; got != 3 {
 		t.Fatalf("fetch limit = %v, want requested+1", got)
 	}
-	response, err := service.Rows(ctx, RowsRequest{Resource: resource, Limit: 2})
+	response, err := service.Rows(ctx, RowsRequest{ProjectID: projectID, Resource: resource, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +83,10 @@ func TestLiveGridUsesLimitPlusOneWithoutCountOrRowID(t *testing.T) {
 	if resolver.withCalls != 1 {
 		t.Fatalf("remote block ran %d queries, want one", resolver.withCalls)
 	}
-	if _, err := service.Rows(ctx, RowsRequest{Resource: resource, Limit: 2, Sorts: []Sort{{Column: "unknown", Direction: "asc"}}}); err == nil {
+	if resolver.projectID != projectID {
+		t.Fatalf("resolver project = %q, want %q", resolver.projectID, projectID)
+	}
+	if _, err := service.Rows(ctx, RowsRequest{ProjectID: projectID, Resource: resource, Limit: 2, Sorts: []Sort{{Column: "unknown", Direction: "asc"}}}); err == nil {
 		t.Fatal("unknown external sort column was accepted")
 	}
 }
@@ -79,6 +98,7 @@ func TestLiveGridMarksUnstablePagingWithoutInventingOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	projectID := liveGridProjectID(t, db)
 	if _, err := db.SQL().ExecContext(ctx, `CREATE TABLE main.live_unstable(id INTEGER)`); err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +109,14 @@ func TestLiveGridMarksUnstablePagingWithoutInventingOrder(t *testing.T) {
 	service := New(db)
 	service.SetExternalResolver(resolver)
 	resource := models.GridResourceRef{Kind: "external", RelationID: "unstable"}
-	built, err := service.BuildSelect(ctx, SelectRequest{Resource: resource, Limit: 10}, true)
+	built, err := service.BuildSelect(ctx, SelectRequest{ProjectID: projectID, Resource: resource, Limit: 10}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(strings.ToUpper(built.SQL), "ORDER BY") {
 		t.Fatalf("unstable relation received invented order: %s", built.SQL)
 	}
-	response, err := service.Rows(ctx, RowsRequest{Resource: resource, Limit: 10})
+	response, err := service.Rows(ctx, RowsRequest{ProjectID: projectID, Resource: resource, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +132,7 @@ func TestPostgresGridPushesUnfilteredPageIntoRemoteQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	projectID := liveGridProjectID(t, db)
 	resolver := &fakeExternalResolver{db: db, relation: models.ExternalRelationInfo{
 		ID: "postgres-relation", ConnectionID: "connection", Provider: "postgres", Catalog: "prod",
 		Schema: "public", Name: "stock", QualifiedName: database.QuoteQualified("prod", "public", "stock"),
@@ -122,8 +143,9 @@ func TestPostgresGridPushesUnfilteredPageIntoRemoteQuery(t *testing.T) {
 	service.SetExternalResolver(resolver)
 
 	built, err := service.BuildSelect(ctx, SelectRequest{
-		Resource: models.GridResourceRef{Kind: "external", RelationID: "postgres-relation"},
-		Columns:  []string{"sku", "id"}, Offset: 500, Limit: 100,
+		ProjectID: projectID,
+		Resource:  models.GridResourceRef{Kind: "external", RelationID: "postgres-relation"},
+		Columns:   []string{"sku", "id"}, Offset: 500, Limit: 100,
 	}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -144,9 +166,10 @@ func TestPostgresGridPushesUnfilteredPageIntoRemoteQuery(t *testing.T) {
 	}
 
 	filtered, err := service.BuildSelect(ctx, SelectRequest{
-		Resource: models.GridResourceRef{Kind: "external", RelationID: "postgres-relation"},
-		Filters:  []Filter{{Column: "sku", Type: "text", Operator: "contains", Value: "ABC"}},
-		Limit:    100,
+		ProjectID: projectID,
+		Resource:  models.GridResourceRef{Kind: "external", RelationID: "postgres-relation"},
+		Filters:   []Filter{{Column: "sku", Type: "text", Operator: "contains", Value: "ABC"}},
+		Limit:     100,
 	}, true)
 	if err != nil {
 		t.Fatal(err)

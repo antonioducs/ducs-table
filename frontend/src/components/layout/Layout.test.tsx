@@ -27,8 +27,8 @@ describe("layout controls", () => {
 
   it("keeps tab selection and close actions separate", () => {
     const tabs: AppTab[] = [
-      { id: "source:one", sourceId: "one", title: "Orders", kind: "dataset" },
-      { id: "source:two", sourceId: "two", title: "Result 1", kind: "result" },
+      { id: "source:one", sourceId: "one", title: "Orders", kind: "local" },
+      { id: "source:two", sourceId: "two", title: "Result 1", kind: "local", isResult: true },
     ];
     const onSelect = vi.fn();
     const onClose = vi.fn();
@@ -41,6 +41,17 @@ describe("layout controls", () => {
     expect(onClose).toHaveBeenCalledWith("source:one");
   });
 
+  it("preserves keyboard navigation between project-local tabs", () => {
+    const tabs: AppTab[] = [
+      { id: "source:one", sourceId: "one", title: "Orders", kind: "local" },
+      { id: "source:two", sourceId: "two", title: "Result 1", kind: "local", isResult: true },
+    ];
+    const onSelect = vi.fn();
+    render(<TabsBar tabs={tabs} activeTabId={tabs[0].id} onSelect={onSelect} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Orders" }), { key: "ArrowRight" });
+    expect(onSelect).toHaveBeenCalledWith("source:two");
+  });
+
   it("states the local-processing guarantees", () => {
     render(<StatusBar activeJobs={0} />);
     expect(screen.getByText("Processed locally")).toBeInTheDocument();
@@ -49,6 +60,7 @@ describe("layout controls", () => {
 
   it("separates persistent tables from ephemeral results and delegates copy", () => {
     const table: SourceInfo = {
+      projectId: "project-1",
       id: "table-1",
       displayName: "Orders",
       tableName: "orders",

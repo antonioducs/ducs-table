@@ -46,6 +46,7 @@ type PreviewResult struct {
 }
 
 type MaterializeRequest struct {
+	ProjectID   string  `json:"projectId"`
 	ID          string  `json:"id,omitempty"`
 	Path        string  `json:"path"`
 	DisplayName string  `json:"displayName,omitempty"`

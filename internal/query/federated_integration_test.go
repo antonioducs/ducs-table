@@ -8,6 +8,7 @@ import (
 
 	"ducs-table/internal/database"
 	"ducs-table/internal/federation"
+	"ducs-table/internal/workspace"
 )
 
 func TestFederatedJoinMaterializesLocalResult(t *testing.T) {
@@ -35,6 +36,13 @@ func TestFederatedJoinMaterializesLocalResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	project, err := workspace.New(db).InitialProject(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Name != "My Workspace" {
+		t.Fatalf("initial project = %q, want My Workspace", project.Name)
+	}
 	if _, err := db.SQL().ExecContext(ctx, `CREATE TABLE data.customers(id INTEGER, name VARCHAR)`); err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +60,15 @@ func TestFederatedJoinMaterializesLocalResult(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := New(db, session).Run(ctx, `SELECT c.id, c.name, p.segment FROM data.customers c LEFT JOIN ext.public.profiles p ON p.id = c.id ORDER BY c.id`)
+	result, err := New(db, session).Run(ctx, project.ID, `SELECT c.id, c.name, p.segment FROM data.customers c LEFT JOIN ext.public.profiles p ON p.id = c.id ORDER BY c.id`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.RowCount != 2 {
 		t.Fatalf("result rows = %d", result.RowCount)
+	}
+	if result.Source.ProjectID != project.ID {
+		t.Fatalf("result project = %q, want %q", result.Source.ProjectID, project.ID)
 	}
 	if err := session.WithMutation(ctx, func(conn *sql.Conn) error { _, execErr := conn.ExecContext(ctx, `DETACH ext`); return execErr }); err != nil {
 		t.Fatal(err)

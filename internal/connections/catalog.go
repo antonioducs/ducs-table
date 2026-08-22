@@ -10,7 +10,10 @@ import (
 	"ducs-table/internal/models"
 )
 
-func (s *Service) RefreshCatalog(ctx context.Context, connectionID string) error {
+func (s *Service) RefreshCatalog(ctx context.Context, projectID, connectionID string) error {
+	if err := s.requireProjectConnection(ctx, projectID, connectionID); err != nil {
+		return err
+	}
 	info, err := s.requireConnected(ctx, connectionID)
 	if err != nil {
 		return err
@@ -36,7 +39,10 @@ func (s *Service) RefreshCatalog(ctx context.Context, connectionID string) error
 	return nil
 }
 
-func (s *Service) ListSchemas(ctx context.Context, connectionID string) ([]SchemaInfo, error) {
+func (s *Service) ListSchemas(ctx context.Context, projectID, connectionID string) ([]SchemaInfo, error) {
+	if err := s.requireProjectConnection(ctx, projectID, connectionID); err != nil {
+		return nil, err
+	}
 	info, err := s.requireConnected(ctx, connectionID)
 	if err != nil {
 		return nil, err
@@ -71,6 +77,9 @@ func (s *Service) ListSchemas(ctx context.Context, connectionID string) ([]Schem
 }
 
 func (s *Service) ListRelations(ctx context.Context, request ListRelationsRequest) ([]models.ExternalRelationInfo, error) {
+	if err := s.requireProjectConnection(ctx, request.ProjectID, request.ConnectionID); err != nil {
+		return nil, err
+	}
 	info, err := s.requireConnected(ctx, request.ConnectionID)
 	if err != nil {
 		return nil, err
@@ -123,12 +132,15 @@ func (s *Service) ListRelations(ctx context.Context, request ListRelationsReques
 	return result, nil
 }
 
-func (s *Service) GetExternalRelation(ctx context.Context, relationIDValue string) (models.ExternalRelationInfo, error) {
+func (s *Service) GetExternalRelation(ctx context.Context, projectID, relationIDValue string) (models.ExternalRelationInfo, error) {
 	s.mu.RLock()
 	relation, ok := s.relations[relationIDValue]
 	s.mu.RUnlock()
 	if !ok {
 		return models.ExternalRelationInfo{}, models.NewError(models.CodeExternalRelationNotFound, "External relation was not found. Refresh its connection catalog", map[string]any{"relationId": relationIDValue})
+	}
+	if err := s.requireProjectConnection(ctx, projectID, relation.ConnectionID); err != nil {
+		return models.ExternalRelationInfo{}, err
 	}
 	info, err := s.requireConnected(ctx, relation.ConnectionID)
 	if err != nil {
@@ -209,8 +221,62 @@ func postgresDefaultOrder(ctx context.Context, conn *sql.Conn, relation models.E
 	return order
 }
 
-func (s *Service) ResolveExternal(ctx context.Context, id string) (models.ExternalRelationInfo, error) {
-	return s.GetExternalRelation(ctx, id)
+func (s *Service) ResolveExternal(ctx context.Context, projectID, id string) (models.ExternalRelationInfo, error) {
+	return s.GetExternalRelation(ctx, projectID, id)
+}
+
+// RestoreExternalRelation rebuilds a durable tab reference from identity
+// fields only. Qualified SQL is always generated with backend quoting; no SQL
+// text from the persisted session is accepted or executed.
+func (s *Service) RestoreExternalRelation(ctx context.Context, projectID string, tab models.ProjectTabReference) (models.ExternalRelationInfo, error) {
+	if (tab.Kind != models.ProjectTabKindExternal && tab.Kind != models.ProjectTabKindPlaceholder) || strings.TrimSpace(tab.ConnectionID) == "" ||
+		strings.TrimSpace(tab.Catalog) == "" || strings.TrimSpace(tab.Schema) == "" || strings.TrimSpace(tab.Relation) == "" {
+		return models.ExternalRelationInfo{}, models.NewError(models.CodeInvalidArgument, "External tab identity is invalid", map[string]any{"tabId": tab.ID})
+	}
+	if err := s.requireProjectConnection(ctx, projectID, tab.ConnectionID); err != nil {
+		return models.ExternalRelationInfo{}, err
+	}
+	info, err := s.repo.Get(ctx, tab.ConnectionID)
+	if err != nil {
+		return models.ExternalRelationInfo{}, err
+	}
+	if tab.Catalog != info.CatalogName {
+		return models.ExternalRelationInfo{}, models.NewError(models.CodeExternalRelationNotFound, "External relation no longer matches its connection", map[string]any{"tabId": tab.ID})
+	}
+	relationType := strings.TrimSpace(tab.RelationType)
+	if relationType == "" {
+		relationType = "table"
+		if info.Kind == KindMongo {
+			relationType = "collection"
+		}
+	}
+	relation := models.ExternalRelationInfo{
+		ConnectionID:  info.ID,
+		Provider:      string(info.Kind),
+		Catalog:       info.CatalogName,
+		Schema:        tab.Schema,
+		Name:          tab.Relation,
+		RelationType:  relationType,
+		QualifiedName: database.QuoteQualified(info.CatalogName, tab.Schema, tab.Relation),
+		Columns:       []models.ColumnInfo{},
+		DefaultOrder:  []string{},
+	}
+	relation.ID = relationID(relation.ConnectionID, relation.Catalog, relation.Schema, relation.Name, relation.RelationType)
+	s.mu.Lock()
+	s.relations[relation.ID] = relation
+	if s.connectionRelations[relation.ConnectionID] == nil {
+		s.connectionRelations[relation.ConnectionID] = make(map[string]struct{})
+	}
+	s.connectionRelations[relation.ConnectionID][relation.ID] = struct{}{}
+	s.mu.Unlock()
+	if s.status(info.ID) != StatusConnected || !s.session.IsAttached(info.ID) {
+		return relation, nil
+	}
+	detailed, err := s.GetExternalRelation(ctx, projectID, relation.ID)
+	if err != nil {
+		return relation, err
+	}
+	return detailed, nil
 }
 
 func (s *Service) requireConnected(ctx context.Context, id string) (ConnectionInfo, error) {

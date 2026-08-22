@@ -19,6 +19,8 @@ const (
 	CodeInvalidQuery                     = "INVALID_QUERY"
 	CodeReadOnlyQueryRequired            = "READ_ONLY_QUERY_REQUIRED"
 	CodeSourceNotFound                   = "SOURCE_NOT_FOUND"
+	CodeProjectNotFound                  = "PROJECT_NOT_FOUND"
+	CodeProjectArchived                  = "PROJECT_ARCHIVED"
 	CodeColumnNotFound                   = "COLUMN_NOT_FOUND"
 	CodeJobNotFound                      = "JOB_NOT_FOUND"
 	CodeShuttingDown                     = "SHUTTING_DOWN"

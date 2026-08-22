@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, CircleOff, Copy, Database, DatabaseZap, Edit3, MoreHorizontal, Plug, PlugZap, RefreshCw, Save, Table2, Trash2 } from "lucide-react";
+import { ChevronRight, CircleOff, Copy, Database, DatabaseZap, Edit3, MoreHorizontal, Plug, PlugZap, RefreshCw, Save, Table2, Unplug } from "lucide-react";
 import type { ConnectionInfo, ExternalRelationInfo } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/lib/utils";
 
 export type ConnectionTreeProps = {
+  projectName?: string;
   connections: readonly ConnectionInfo[];
   schemasByConnection: Record<string, string[]>;
   relationsBySchema: Record<string, ExternalRelationInfo[]>;
@@ -23,7 +24,7 @@ export type ConnectionTreeProps = {
   onDisconnect: (connection: ConnectionInfo) => void;
   onEdit: (connection: ConnectionInfo) => void;
   onRefresh: (connection: ConnectionInfo) => void;
-  onDelete: (connection: ConnectionInfo) => void;
+  onRemove: (connection: ConnectionInfo) => void;
 };
 
 export function ConnectionTree(props: ConnectionTreeProps) {
@@ -41,7 +42,7 @@ export function ConnectionTree(props: ConnectionTreeProps) {
     setExpandedSchemas(next);
   };
 
-  if (!props.connections.length) return <p className="px-3 py-2 text-[10px] leading-4 text-muted-foreground/70">Connect PostgreSQL or MongoDB to browse live data</p>;
+  if (!props.connections.length) return <p className="px-3 py-2 text-[10px] leading-4 text-muted-foreground/70">Attach PostgreSQL or MongoDB to {props.projectName ?? "this project"} to browse live data</p>;
   return <div className="pb-1">{props.connections.map((connection) => {
     const expanded = expandedConnections.has(connection.id);
     const schemas = props.schemasByConnection[connection.id];
@@ -61,7 +62,7 @@ export function ConnectionTree(props: ConnectionTreeProps) {
           {connection.status === "connected" ? <DropdownMenuItem onSelect={() => props.onDisconnect(connection)}><PlugZap /> Disconnect</DropdownMenuItem> : <DropdownMenuItem onSelect={() => props.onConnect(connection)}><Plug /> Connect</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => props.onEdit(connection)}><Edit3 /> Edit</DropdownMenuItem>
           <DropdownMenuItem disabled={connection.status !== "connected"} onSelect={() => props.onRefresh(connection)}><RefreshCw /> Refresh catalog</DropdownMenuItem>
-          <DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => props.onDelete(connection)}><Trash2 /> Delete connection</DropdownMenuItem>
+          <DropdownMenuSeparator /><DropdownMenuItem onSelect={() => props.onRemove(connection)}><Unplug /> Remove from project</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
       </div>
       {expanded && <div className="ml-4 border-l border-border pl-1">

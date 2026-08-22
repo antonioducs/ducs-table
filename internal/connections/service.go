@@ -43,7 +43,7 @@ type Service struct {
 type connectionRepository interface {
 	List(context.Context) ([]ConnectionInfo, error)
 	Get(context.Context, string) (ConnectionInfo, error)
-	Create(context.Context, ConnectionInfo) error
+	Create(context.Context, string, ConnectionInfo) error
 	Update(context.Context, ConnectionInfo) error
 	Delete(context.Context, string) error
 }
@@ -99,6 +99,9 @@ func (s *Service) decorate(ctx context.Context, info ConnectionInfo) ConnectionI
 }
 
 func (s *Service) CreateConnection(ctx context.Context, request CreateConnectionRequest) (ConnectionInfo, error) {
+	if strings.TrimSpace(request.ProjectID) == "" {
+		return ConnectionInfo{}, models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
 	id, err := models.NewID()
 	if err != nil {
 		return ConnectionInfo{}, models.NewError(models.CodeDatabase, "Could not create a connection ID", nil)
@@ -127,7 +130,7 @@ func (s *Service) CreateConnection(ctx context.Context, request CreateConnection
 		}
 		secretWritten = true
 	}
-	if err := s.repo.Create(ctx, info); err != nil {
+	if err := s.repo.Create(ctx, request.ProjectID, info); err != nil {
 		if secretWritten {
 			_ = s.credentials.Delete(context.Background(), id)
 		}
@@ -313,7 +316,10 @@ func (s *Service) TestConnection(ctx context.Context, request TestConnectionRequ
 	})
 }
 
-func (s *Service) Connect(ctx context.Context, id string) (ConnectionInfo, error) {
+func (s *Service) Connect(ctx context.Context, projectID, id string) (ConnectionInfo, error) {
+	if err := s.requireProjectConnection(ctx, projectID, id); err != nil {
+		return ConnectionInfo{}, err
+	}
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
 	info, err := s.repo.Get(ctx, id)
@@ -363,7 +369,10 @@ func (s *Service) Connect(ctx context.Context, id string) (ConnectionInfo, error
 	return connected, nil
 }
 
-func (s *Service) Disconnect(ctx context.Context, id string) error {
+func (s *Service) Disconnect(ctx context.Context, projectID, id string) error {
+	if err := s.requireProjectConnection(ctx, projectID, id); err != nil {
+		return err
+	}
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
 	return s.disconnectLocked(ctx, id)
@@ -449,8 +458,8 @@ func (s *Service) emit(info ConnectionInfo) {
 	}
 }
 
-func (s *Service) AutoConnectIDs(ctx context.Context) ([]string, error) {
-	infos, err := s.repo.List(ctx)
+func (s *Service) AutoConnectIDs(ctx context.Context, projectID string) ([]string, error) {
+	infos, err := s.ListProjectConnections(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +470,67 @@ func (s *Service) AutoConnectIDs(ctx context.Context) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// ListProjectConnections returns decorated global connections linked to one
+// non-archived project. Runtime connection state remains shared application-wide.
+func (s *Service) ListProjectConnections(ctx context.Context, projectID string) ([]ConnectionInfo, error) {
+	if err := s.requireProject(ctx, projectID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.SQL().QueryContext(ctx, connectionSelect+`
+		JOIN ducs_meta.project_connections pc ON pc.connection_id = c.id
+		WHERE pc.project_id = ? ORDER BY lower(c.name), c.id`, projectID)
+	if err != nil {
+		return nil, models.WrapError(models.CodeDatabase, "Could not list project connections", err, nil)
+	}
+	defer rows.Close()
+	items := make([]ConnectionInfo, 0)
+	for rows.Next() {
+		info, scanErr := scanConnection(rows)
+		if scanErr != nil {
+			return nil, models.WrapError(models.CodeDatabase, "Could not read project connection metadata", scanErr, nil)
+		}
+		items = append(items, s.decorate(ctx, info))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, models.WrapError(models.CodeDatabase, "Could not list project connections", err, nil)
+	}
+	return items, nil
+}
+
+func (s *Service) requireProject(ctx context.Context, projectID string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
+	var archivedAt sql.NullTime
+	err := s.db.SQL().QueryRowContext(ctx, `SELECT archived_at FROM ducs_meta.projects WHERE id = ?`, projectID).Scan(&archivedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.NewError(models.CodeProjectNotFound, "Project was not found", map[string]any{"projectId": projectID})
+	}
+	if err != nil {
+		return models.WrapError(models.CodeDatabase, "Could not validate the project", err, nil)
+	}
+	if archivedAt.Valid {
+		return models.NewError(models.CodeProjectArchived, "Archived projects cannot be changed", map[string]any{"projectId": projectID})
+	}
+	return nil
+}
+
+func (s *Service) requireProjectConnection(ctx context.Context, projectID, connectionID string) error {
+	if err := s.requireProject(ctx, projectID); err != nil {
+		return err
+	}
+	var linked bool
+	if err := s.db.SQL().QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM ducs_meta.project_connections WHERE project_id = ? AND connection_id = ?
+	)`, projectID, connectionID).Scan(&linked); err != nil {
+		return models.WrapError(models.CodeDatabase, "Could not validate the project connection", err, nil)
+	}
+	if !linked {
+		return models.NewError(models.CodeConnectionNotFound, "Connection is not attached to this project", map[string]any{"projectId": projectID, "connectionId": connectionID})
+	}
+	return nil
 }
 
 func (s *Service) WithFederatedConn(ctx context.Context, fn func(*sql.Conn) error) error {

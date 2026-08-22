@@ -6,9 +6,10 @@ export interface EmptyStateProps {
   onChoose: () => void;
   onConnect?: () => void;
   dragActive?: boolean;
+  projectName?: string;
 }
 
-export function EmptyState({ onChoose, onConnect, dragActive = false }: EmptyStateProps) {
+export function EmptyState({ onChoose, onConnect, dragActive = false, projectName }: EmptyStateProps) {
   return (
     <section
       className={cn("relative grid h-full place-items-center overflow-hidden bg-background p-8 transition-colors", dragActive && "bg-primary/5")}
@@ -22,6 +23,7 @@ export function EmptyState({ onChoose, onConnect, dragActive = false }: EmptySta
         </div>
         <h2 className="mt-5 text-xl font-semibold tracking-tight">Drop a data file anywhere</h2>
         <p className="mt-2 text-[13px] text-muted-foreground">CSV, TSV, JSON, JSONL or XLSX — processed locally</p>
+        {projectName && <p className="mt-1 text-[11px] text-muted-foreground">Add the first source to {projectName}.</p>}
         <div className="mt-5 h-9" aria-live="polite">
           {dragActive ? (
             <p className="flex h-9 items-center justify-center gap-1.5 text-[12px] font-medium text-primary"><FileUp className="size-3.5" aria-hidden="true" /> Release to import files</p>

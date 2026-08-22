@@ -23,6 +23,7 @@ const (
 )
 
 type CSVRequest struct {
+	ProjectID      string                 `json:"projectId"`
 	Resource       models.GridResourceRef `json:"resource"`
 	SourceID       string                 `json:"sourceId"`
 	Destination    string                 `json:"destination"`
@@ -93,7 +94,7 @@ func (s *Service) ExportCSV(ctx context.Context, request CSVRequest) (Result, er
 	if resource.Kind == "" && request.SourceID != "" {
 		resource = models.GridResourceRef{Kind: "source", SourceID: request.SourceID}
 	}
-	selectRequest := grid.SelectRequest{Resource: resource, SourceID: request.SourceID}
+	selectRequest := grid.SelectRequest{ProjectID: request.ProjectID, Resource: resource, SourceID: request.SourceID}
 	switch scope {
 	case ScopeEntire:
 		// Intentionally leave view controls empty.
@@ -109,7 +110,7 @@ func (s *Service) ExportCSV(ctx context.Context, request CSVRequest) (Result, er
 		return Result{}, err
 	}
 	copySQL := "COPY (" + built.SQL + ") TO " + database.QuotePathLiteral(absDestination) + " (FORMAT CSV, HEADER TRUE)"
-	err = s.grid.WithResourceConn(ctx, resource, func(conn *sql.Conn) error {
+	err = s.grid.WithResourceConn(ctx, request.ProjectID, resource, func(conn *sql.Conn) error {
 		_, execErr := conn.ExecContext(ctx, copySQL, built.Args...)
 		return execErr
 	})

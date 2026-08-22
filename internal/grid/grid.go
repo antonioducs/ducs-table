@@ -48,7 +48,7 @@ func (s *Service) Rows(ctx context.Context, request RowsRequest) (RowsResponse, 
 		limit = defaultLimit
 	}
 	built, err := s.BuildSelect(ctx, SelectRequest{
-		Resource: resource, SourceID: request.SourceID, Columns: request.VisibleColumns,
+		ProjectID: request.ProjectID, Resource: resource, SourceID: request.SourceID, Columns: request.VisibleColumns,
 		Sorts: request.Sorts, Filters: request.Filters,
 		Offset: request.Offset, Limit: limit,
 	}, true)
@@ -77,7 +77,7 @@ func (s *Service) Rows(ctx context.Context, request RowsRequest) (RowsResponse, 
 		response.Rows = values
 		return response, nil
 	}
-	total, err := s.CountRows(ctx, resource.SourceID, request.Filters)
+	total, err := s.CountRows(ctx, request.ProjectID, resource.SourceID, request.Filters)
 	if err != nil {
 		return RowsResponse{}, err
 	}
@@ -92,8 +92,8 @@ func (s *Service) GetRows(ctx context.Context, request RowsRequest) (RowsRespons
 	return s.Rows(ctx, request)
 }
 
-func (s *Service) CountRows(ctx context.Context, sourceID string, filters []Filter) (int64, error) {
-	resolved, err := s.resolve(ctx, models.GridResourceRef{Kind: "source", SourceID: sourceID}, nil)
+func (s *Service) CountRows(ctx context.Context, projectID, sourceID string, filters []Filter) (int64, error) {
+	resolved, err := s.resolve(ctx, projectID, models.GridResourceRef{Kind: "source", SourceID: sourceID}, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -111,15 +111,18 @@ func (s *Service) CountRows(ctx context.Context, sourceID string, filters []Filt
 
 // CountResource keeps remote counts explicit: live relations report unknown
 // rather than issuing an expensive COUNT(*) behind the grid's back.
-func (s *Service) CountResource(ctx context.Context, resource models.GridResourceRef, filters []Filter) (*int64, error) {
+func (s *Service) CountResource(ctx context.Context, projectID string, resource models.GridResourceRef, filters []Filter) (*int64, error) {
 	resource, err := normalizeResource(resource, "")
 	if err != nil {
 		return nil, err
 	}
 	if resource.Kind == "external" {
+		if _, err := s.resolve(ctx, projectID, resource, nil); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
-	count, err := s.CountRows(ctx, resource.SourceID, filters)
+	count, err := s.CountRows(ctx, projectID, resource.SourceID, filters)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +143,7 @@ func (s *Service) BuildSelect(ctx context.Context, request SelectRequest, pagina
 	if err != nil {
 		return BuiltSelect{}, err
 	}
-	resolved, err := s.resolve(ctx, resource, request.Columns)
+	resolved, err := s.resolve(ctx, request.ProjectID, resource, request.Columns)
 	if err != nil {
 		return BuiltSelect{}, err
 	}
@@ -200,12 +203,12 @@ type resolvedRelation struct {
 	useRowID     bool
 }
 
-func (s *Service) resolve(ctx context.Context, resource models.GridResourceRef, requested []string) (resolvedRelation, error) {
+func (s *Service) resolve(ctx context.Context, projectID string, resource models.GridResourceRef, requested []string) (resolvedRelation, error) {
 	var resolved resolvedRelation
 	resolved.resource = resource
 	var columns []models.ColumnInfo
 	if resource.Kind == "source" {
-		source, err := s.workspace.GetSource(ctx, resource.SourceID)
+		source, err := s.workspace.GetSource(ctx, projectID, resource.SourceID)
 		if err != nil {
 			return resolvedRelation{}, err
 		}
@@ -220,7 +223,7 @@ func (s *Service) resolve(ctx context.Context, resource models.GridResourceRef, 
 		if s.external == nil {
 			return resolvedRelation{}, models.NewError(models.CodeConnectionNotConnected, "External database services are unavailable", nil)
 		}
-		relation, err := s.external.ResolveExternal(ctx, resource.RelationID)
+		relation, err := s.external.ResolveExternal(ctx, projectID, resource.RelationID)
 		if err != nil {
 			return resolvedRelation{}, err
 		}
@@ -336,7 +339,7 @@ func (s *Service) ExecuteSelect(ctx context.Context, built BuiltSelect) ([]map[s
 	return values, err
 }
 
-func (s *Service) WithResourceConn(ctx context.Context, resource models.GridResourceRef, fn func(*sql.Conn) error) error {
+func (s *Service) WithResourceConn(ctx context.Context, projectID string, resource models.GridResourceRef, fn func(*sql.Conn) error) error {
 	resource, err := normalizeResource(resource, "")
 	if err != nil {
 		return err
@@ -345,7 +348,13 @@ func (s *Service) WithResourceConn(ctx context.Context, resource models.GridReso
 		if s.external == nil {
 			return models.NewError(models.CodeConnectionNotConnected, "External database services are unavailable", nil)
 		}
+		if _, err := s.external.ResolveExternal(ctx, projectID, resource.RelationID); err != nil {
+			return err
+		}
 		return s.external.WithFederatedConn(ctx, fn)
+	}
+	if _, err := s.workspace.GetSource(ctx, projectID, resource.SourceID); err != nil {
+		return err
 	}
 	conn, err := s.db.SQL().Conn(ctx)
 	if err != nil {

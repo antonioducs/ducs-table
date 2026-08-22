@@ -37,16 +37,16 @@ func (f *failingRepository) List(context.Context) ([]ConnectionInfo, error) { re
 func (f *failingRepository) Get(context.Context, string) (ConnectionInfo, error) {
 	return f.current, nil
 }
-func (f *failingRepository) Create(context.Context, ConnectionInfo) error { return f.createErr }
-func (f *failingRepository) Update(context.Context, ConnectionInfo) error { return f.updateErr }
-func (f *failingRepository) Delete(context.Context, string) error         { return nil }
+func (f *failingRepository) Create(context.Context, string, ConnectionInfo) error { return f.createErr }
+func (f *failingRepository) Update(context.Context, ConnectionInfo) error         { return f.updateErr }
+func (f *failingRepository) Delete(context.Context, string) error                 { return nil }
 
 func TestCreateAndUpdateCredentialCompensation(t *testing.T) {
 	ctx := context.Background()
 	store := credentials.NewMemoryStore()
 	repo := &failingRepository{createErr: errors.New("metadata failure")}
 	service := &Service{repo: repo, credentials: store, runtime: make(map[string]runtimeState), relations: make(map[string]models.ExternalRelationInfo), connectionRelations: make(map[string]map[string]struct{})}
-	request := CreateConnectionRequest{Name: "Prod", Kind: KindPostgres, CatalogName: "prod", Config: validPostgresInfo().Config, Password: "new-secret"}
+	request := CreateConnectionRequest{ProjectID: "project", Name: "Prod", Kind: KindPostgres, CatalogName: "prod", Config: validPostgresInfo().Config, Password: "new-secret"}
 	if _, err := service.CreateConnection(ctx, request); err == nil {
 		t.Fatal("create unexpectedly succeeded")
 	}

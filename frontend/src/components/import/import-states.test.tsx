@@ -6,6 +6,7 @@ import { ImportStatusBanner } from "./ImportStatusBanner";
 import type { SourceInfo } from "@/types";
 
 const source: SourceInfo = {
+  projectId: "project-1",
   id: "source",
   displayName: "Customers",
   tableName: "customers",

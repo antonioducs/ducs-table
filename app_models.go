@@ -11,15 +11,27 @@ import (
 // BootstrapState is intentionally metadata-only. Table rows are always fetched
 // through GetRows and never stored in the frontend session state.
 type BootstrapState struct {
-	Datasets     []models.SourceInfo          `json:"datasets"`
-	Results      []models.SourceInfo          `json:"results"`
-	SavedQueries []models.SavedQuery          `json:"savedQueries"`
-	Jobs         []jobs.Snapshot              `json:"jobs"`
-	Connections  []connections.ConnectionInfo `json:"connections"`
-	Ready        bool                         `json:"ready"`
+	Projects        []models.Project `json:"projects"`
+	ActiveProjectID string           `json:"activeProjectId"`
+	Workspace       ProjectWorkspace `json:"workspace"`
+	Jobs            []jobs.Snapshot  `json:"jobs"`
+	Ready           bool             `json:"ready"`
+}
+
+// ProjectWorkspace is the complete metadata/session payload for one project.
+// Connection credentials and table rows are deliberately excluded.
+type ProjectWorkspace struct {
+	Project           models.Project                `json:"project"`
+	Sources           []models.SourceInfo           `json:"sources"`
+	SavedQueries      []models.SavedQuery           `json:"savedQueries"`
+	Connections       []connections.ConnectionInfo  `json:"connections"`
+	ExternalRelations []models.ExternalRelationInfo `json:"externalRelations"`
+	Session           models.ProjectSession         `json:"session"`
+	Warnings          []*models.AppError            `json:"warnings,omitempty"`
 }
 
 type PreviewSource struct {
+	ProjectID   string              `json:"projectId"`
 	ID          string              `json:"id"`
 	DisplayName string              `json:"displayName"`
 	TableName   string              `json:"tableName"`
@@ -36,32 +48,37 @@ type PreviewSource struct {
 }
 
 type WorkbookSheets struct {
+	ProjectID   string   `json:"projectId"`
 	Path        string   `json:"path"`
 	DisplayName string   `json:"displayName"`
 	Sheets      []string `json:"sheets"`
 }
 
 type ImportPathsRequest struct {
-	Paths   []string          `json:"paths"`
-	Options importers.Options `json:"options"`
+	ProjectID string            `json:"projectId"`
+	Paths     []string          `json:"paths"`
+	Options   importers.Options `json:"options"`
 }
 
 type ImportPathsResult struct {
+	ProjectID string           `json:"projectId"`
 	Sources   []PreviewSource  `json:"sources"`
 	Jobs      []jobs.Snapshot  `json:"jobs"`
 	Workbooks []WorkbookSheets `json:"workbooks,omitempty"`
 }
 
 type XLSXImportRequest struct {
-	Path    string            `json:"path"`
-	Sheets  []string          `json:"sheets"`
-	Options importers.Options `json:"options"`
+	ProjectID string            `json:"projectId"`
+	Path      string            `json:"path"`
+	Sheets    []string          `json:"sheets"`
+	Options   importers.Options `json:"options"`
 }
 
 type CountRowsRequest struct {
-	Resource models.GridResourceRef `json:"resource"`
-	SourceID string                 `json:"sourceId"`
-	Filters  []grid.Filter          `json:"filters,omitempty"`
+	ProjectID string                 `json:"projectId"`
+	Resource  models.GridResourceRef `json:"resource"`
+	SourceID  string                 `json:"sourceId"`
+	Filters   []grid.Filter          `json:"filters,omitempty"`
 }
 
 type CountRowsResponse struct {
@@ -69,12 +86,13 @@ type CountRowsResponse struct {
 }
 
 type CellValueRequest struct {
-	Resource models.GridResourceRef `json:"resource"`
-	SourceID string                 `json:"sourceId"`
-	RowIndex int64                  `json:"rowIndex"`
-	Column   string                 `json:"column"`
-	Sorts    []grid.Sort            `json:"sorts,omitempty"`
-	Filters  []grid.Filter          `json:"filters,omitempty"`
+	ProjectID string                 `json:"projectId"`
+	Resource  models.GridResourceRef `json:"resource"`
+	SourceID  string                 `json:"sourceId"`
+	RowIndex  int64                  `json:"rowIndex"`
+	Column    string                 `json:"column"`
+	Sorts     []grid.Sort            `json:"sorts,omitempty"`
+	Filters   []grid.Filter          `json:"filters,omitempty"`
 }
 
 type CellValueResponse struct {
@@ -82,16 +100,19 @@ type CellValueResponse struct {
 }
 
 type RunQueryRequest struct {
-	SQL string `json:"sql"`
+	ProjectID string `json:"projectId"`
+	SQL       string `json:"sql"`
 }
 
 type SaveQueryRequest struct {
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name"`
-	SQL  string `json:"sql"`
+	ProjectID string `json:"projectId"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name"`
+	SQL       string `json:"sql"`
 }
 
 type ExportRequest struct {
+	ProjectID      string                 `json:"projectId"`
 	Resource       models.GridResourceRef `json:"resource"`
 	SourceID       string                 `json:"sourceId"`
 	Destination    string                 `json:"destination,omitempty"`
@@ -99,4 +120,39 @@ type ExportRequest struct {
 	Filters        []grid.Filter          `json:"filters,omitempty"`
 	Sorts          []grid.Sort            `json:"sorts,omitempty"`
 	VisibleColumns []string               `json:"visibleColumns,omitempty"`
+}
+
+type ProjectCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type ProjectUpdateRequest struct {
+	ProjectID   string `json:"projectId"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type ProjectIDRequest struct {
+	ProjectID string `json:"projectId"`
+}
+
+type ProjectSessionRequest struct {
+	ProjectID string                `json:"projectId"`
+	Session   models.ProjectSession `json:"session"`
+}
+
+type ProjectResourceRequest struct {
+	ProjectID string `json:"projectId"`
+	ID        string `json:"id"`
+}
+
+type WorkbookSheetsRequest struct {
+	ProjectID string `json:"projectId"`
+	Path      string `json:"path"`
+}
+
+type ProjectConnectionRequest struct {
+	ProjectID    string `json:"projectId"`
+	ConnectionID string `json:"connectionId"`
 }

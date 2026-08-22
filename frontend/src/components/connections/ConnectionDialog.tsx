@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectId?: string;
   connection?: ConnectionInfo;
   onSaved: (connection: ConnectionInfo) => void;
 };
@@ -22,7 +23,7 @@ type Props = {
 const postgresDefaults: PostgresConfig = { host: "localhost", port: 5432, database: "", username: "", sslMode: "prefer", connectTimeoutSeconds: 10, poolSize: 4 };
 const mongoDefaults: MongoConfig = { mode: "mongodb", hosts: ["localhost:27017"], database: "", tls: false, readPreference: "secondaryPreferred", connectTimeoutSeconds: 10, experimentalConsent: false };
 
-export function ConnectionDialog({ open, onOpenChange, connection, onSaved }: Props) {
+export function ConnectionDialog({ open, onOpenChange, projectId, connection, onSaved }: Props) {
   const [kind, setKind] = useState<ConnectionKind>(connection?.kind ?? "postgres");
   const [name, setName] = useState("");
   const [catalogName, setCatalogName] = useState("");
@@ -71,12 +72,14 @@ export function ConnectionDialog({ open, onOpenChange, connection, onSaved }: Pr
     if (validation) { setFeedback({ ok: false, message: validation }); return; }
     setBusy("save"); setFeedback(undefined);
     try {
+      if (!connection && !projectId) throw new Error("Choose a project before creating a connection.");
       const saved = connection
         ? await bridge.UpdateConnection({ ...input(), id: connection.id })
-        : await bridge.CreateConnection(input());
+        : await bridge.CreateConnection({ ...input(), projectId: projectId! });
       onSaved(saved);
+      if (!projectId) { changeOpen(false); return; }
       try {
-        const connected = await bridge.ConnectConnection(saved.id);
+        const connected = await bridge.ConnectConnection({ projectId, id: saved.id });
         onSaved(connected);
         changeOpen(false);
       } catch (error) {
@@ -165,7 +168,7 @@ export function ConnectionDialog({ open, onOpenChange, connection, onSaved }: Pr
       <DialogFooter>
         <Button variant="ghost" onClick={() => changeOpen(false)} disabled={Boolean(busy)}>Cancel</Button>
         <Button variant="secondary" onClick={() => void test()} disabled={Boolean(busy) || Boolean(validation)}>{busy === "test" ? <Loader2 className="animate-spin" /> : <FlaskConical />} Test connection</Button>
-        <Button onClick={() => void save()} disabled={Boolean(busy) || Boolean(validation)}>{busy === "save" ? <Loader2 className="animate-spin" /> : <Database />} Save &amp; connect</Button>
+        <Button onClick={() => void save()} disabled={Boolean(busy) || Boolean(validation)}>{busy === "save" ? <Loader2 className="animate-spin" /> : <Database />} {projectId ? "Save & connect" : "Save changes"}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

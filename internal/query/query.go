@@ -22,6 +22,7 @@ type QueryResultInfo struct {
 }
 
 type SaveResultRequest struct {
+	ProjectID   string `json:"projectId"`
 	ResultID    string `json:"resultId"`
 	DisplayName string `json:"displayName"`
 	SQLName     string `json:"sqlName,omitempty"`
@@ -47,7 +48,10 @@ func New(db *database.DB, runners ...transactionRunner) *Service {
 
 // Run materializes a read-only query into result.__tmp_<uuid> and registers it
 // as ephemeral in the same transaction.
-func (s *Service) Run(ctx context.Context, userSQL string) (QueryResultInfo, error) {
+func (s *Service) Run(ctx context.Context, projectID, userSQL string) (QueryResultInfo, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return QueryResultInfo{}, models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
 	validated, err := ValidateReadOnly(userSQL)
 	if err != nil {
 		return QueryResultInfo{}, err
@@ -78,11 +82,11 @@ func (s *Service) Run(ctx context.Context, userSQL string) (QueryResultInfo, err
 		}
 		now := time.Now().UTC()
 		source = models.SourceInfo{
-			ID: id, DisplayName: "Query result", SQLName: tableName, Schema: "result",
+			ID: id, ProjectID: projectID, DisplayName: "Query result", SQLName: tableName, Schema: "result",
 			SourceType: "query", RowCount: count, Columns: columns, IsEphemeral: true,
 			OriginalSQL: strings.TrimSpace(userSQL), CreatedAt: now, UpdatedAt: now,
 		}
-		return workspace.InsertSourceTx(ctx, tx, source)
+		return workspace.InsertSourceTx(ctx, tx, projectID, source)
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
@@ -102,17 +106,21 @@ func (s *Service) Run(ctx context.Context, userSQL string) (QueryResultInfo, err
 }
 
 // SaveResultAsTable moves an ephemeral result into the persistent data schema.
-func (s *Service) SaveResultAsTable(ctx context.Context, resultID, displayName string) (models.SourceInfo, error) {
-	return s.SaveResult(ctx, SaveResultRequest{ResultID: resultID, DisplayName: displayName})
+func (s *Service) SaveResultAsTable(ctx context.Context, projectID, resultID, displayName string) (models.SourceInfo, error) {
+	return s.SaveResult(ctx, SaveResultRequest{ProjectID: projectID, ResultID: resultID, DisplayName: displayName})
 }
 
 // SaveResult supports either an atomic move (default) or copy. Copy keeps the
 // original ephemeral result and gives the persistent table a new source ID.
 func (s *Service) SaveResult(ctx context.Context, request SaveResultRequest) (models.SourceInfo, error) {
 	request.ResultID = strings.TrimSpace(request.ResultID)
+	request.ProjectID = strings.TrimSpace(request.ProjectID)
 	request.DisplayName = strings.TrimSpace(request.DisplayName)
 	if request.ResultID == "" {
 		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Result ID is required", nil)
+	}
+	if request.ProjectID == "" {
+		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
 	}
 	if request.DisplayName == "" {
 		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Saved table name is required", nil)
@@ -123,7 +131,7 @@ func (s *Service) SaveResult(ctx context.Context, request SaveResultRequest) (mo
 	}
 	var saved models.SourceInfo
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
-		result, err := workspace.GetSource(ctx, tx, request.ResultID, false)
+		result, err := workspace.GetSource(ctx, tx, request.ProjectID, request.ResultID, false)
 		if err != nil {
 			return err
 		}
@@ -158,7 +166,7 @@ func (s *Service) SaveResult(ctx context.Context, request SaveResultRequest) (mo
 			saved.Columns = columns
 			saved.CreatedAt = now
 			saved.UpdatedAt = now
-			return workspace.InsertSourceTx(ctx, tx, saved)
+			return workspace.InsertSourceTx(ctx, tx, request.ProjectID, saved)
 		}
 		if _, err := tx.ExecContext(ctx, "DROP TABLE "+from); err != nil {
 			return err
@@ -166,7 +174,7 @@ func (s *Service) SaveResult(ctx context.Context, request SaveResultRequest) (mo
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE ducs_meta.datasets
 			SET display_name = ?, sql_name = ?, schema_name = 'data', is_ephemeral = FALSE, updated_at = ?
-			WHERE id = ?`, request.DisplayName, finalName, now, result.ID); err != nil {
+			WHERE id = ? AND project_id = ?`, request.DisplayName, finalName, now, result.ID, request.ProjectID); err != nil {
 			return err
 		}
 		saved = result
@@ -190,13 +198,17 @@ func (s *Service) SaveResult(ctx context.Context, request SaveResultRequest) (mo
 
 // CloseResult permanently drops an ephemeral result. Repeated calls after the
 // first return SOURCE_NOT_FOUND, making accidental dataset deletion impossible.
-func (s *Service) CloseResult(ctx context.Context, resultID string) error {
+func (s *Service) CloseResult(ctx context.Context, projectID, resultID string) error {
+	projectID = strings.TrimSpace(projectID)
 	resultID = strings.TrimSpace(resultID)
 	if resultID == "" {
 		return models.NewError(models.CodeInvalidArgument, "Result ID is required", nil)
 	}
+	if projectID == "" {
+		return models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
-		result, err := workspace.GetSource(ctx, tx, resultID, false)
+		result, err := workspace.GetSource(ctx, tx, projectID, resultID, false)
 		if err != nil {
 			return err
 		}
@@ -206,7 +218,7 @@ func (s *Service) CloseResult(ctx context.Context, resultID string) error {
 		if _, err := tx.ExecContext(ctx, "DROP TABLE "+database.QuoteQualified(result.Schema, result.SQLName)); err != nil {
 			return err
 		}
-		return workspace.DeleteSourceMetadataTx(ctx, tx, resultID)
+		return workspace.DeleteSourceMetadataTx(ctx, tx, projectID, resultID)
 	})
 	if err != nil {
 		var appErr *models.AppError

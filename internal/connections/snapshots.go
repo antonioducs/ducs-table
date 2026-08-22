@@ -20,7 +20,7 @@ type snapshotRecord struct {
 }
 
 func (s *Service) CreateSnapshot(ctx context.Context, request SnapshotRequest) (models.SourceInfo, error) {
-	relation, err := s.GetExternalRelation(ctx, request.RelationID)
+	relation, err := s.GetExternalRelation(ctx, request.ProjectID, request.RelationID)
 	if err != nil {
 		return models.SourceInfo{}, err
 	}
@@ -71,8 +71,8 @@ func (s *Service) CreateSnapshot(ctx context.Context, request SnapshotRequest) (
 		now := nowUTC()
 		connectionID := connection.ID
 		origin := &models.SnapshotOrigin{ConnectionID: &connectionID, ConnectionName: connection.Name, Catalog: relation.Catalog, Schema: relation.Schema, Relation: relation.Name, RelationType: relation.RelationType, RefreshedAt: now}
-		source = models.SourceInfo{ID: id, DisplayName: display, SQLName: finalName, Schema: "data", SourceType: "snapshot", RowCount: count, Columns: columns, Snapshot: origin, CreatedAt: now, UpdatedAt: now}
-		if insertErr := workspace.InsertSourceTx(ctx, tx, source); insertErr != nil {
+		source = models.SourceInfo{ID: id, ProjectID: request.ProjectID, DisplayName: display, SQLName: finalName, Schema: "data", SourceType: "snapshot", RowCount: count, Columns: columns, Snapshot: origin, CreatedAt: now, UpdatedAt: now}
+		if insertErr := workspace.InsertSourceTx(ctx, tx, request.ProjectID, source); insertErr != nil {
 			return insertErr
 		}
 		_, insertErr := tx.ExecContext(ctx, `INSERT INTO ducs_meta.snapshots (source_id, connection_id, connection_name, catalog_name, schema_name, relation_name, relation_type, refreshed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, connection.ID, connection.Name, relation.Catalog, relation.Schema, relation.Name, relation.RelationType, now)
@@ -84,8 +84,8 @@ func (s *Service) CreateSnapshot(ctx context.Context, request SnapshotRequest) (
 	return source, nil
 }
 
-func (s *Service) RefreshSnapshot(ctx context.Context, sourceID string) (models.SourceInfo, error) {
-	record, err := s.getSnapshotRecord(ctx, sourceID)
+func (s *Service) RefreshSnapshot(ctx context.Context, projectID, sourceID string) (models.SourceInfo, error) {
+	record, err := s.getSnapshotRecord(ctx, projectID, sourceID)
 	if err != nil {
 		return models.SourceInfo{}, err
 	}
@@ -106,10 +106,10 @@ func (s *Service) RefreshSnapshot(ctx context.Context, sourceID string) (models.
 	}
 	s.connectionRelations[relation.ConnectionID][relation.ID] = struct{}{}
 	s.mu.Unlock()
-	if relation, err = s.GetExternalRelation(ctx, relation.ID); err != nil {
+	if relation, err = s.GetExternalRelation(ctx, projectID, relation.ID); err != nil {
 		return models.SourceInfo{}, err
 	}
-	current, err := s.workspace.GetSource(ctx, sourceID)
+	current, err := s.workspace.GetSource(ctx, projectID, sourceID)
 	if err != nil {
 		return models.SourceInfo{}, err
 	}
@@ -147,7 +147,7 @@ func (s *Service) RefreshSnapshot(ctx context.Context, sourceID string) (models.
 			return columnErr
 		}
 		now := nowUTC()
-		if _, execErr := tx.ExecContext(ctx, `UPDATE ducs_meta.datasets SET row_count = ?, updated_at = ? WHERE id = ?`, count, now, sourceID); execErr != nil {
+		if _, execErr := tx.ExecContext(ctx, `UPDATE ducs_meta.datasets SET row_count = ?, updated_at = ? WHERE id = ? AND project_id = ?`, count, now, sourceID, projectID); execErr != nil {
 			return execErr
 		}
 		if _, execErr := tx.ExecContext(ctx, `UPDATE ducs_meta.snapshots SET refreshed_at = ?, connection_name = ?, catalog_name = ?, schema_name = ?, relation_name = ?, relation_type = ? WHERE source_id = ?`, now, record.ConnectionName, record.Catalog, record.Schema, record.Relation, record.RelationType, sourceID); execErr != nil {
@@ -166,10 +166,12 @@ func (s *Service) RefreshSnapshot(ctx context.Context, sourceID string) (models.
 	return refreshed, nil
 }
 
-func (s *Service) getSnapshotRecord(ctx context.Context, sourceID string) (snapshotRecord, error) {
+func (s *Service) getSnapshotRecord(ctx context.Context, projectID, sourceID string) (snapshotRecord, error) {
 	var record snapshotRecord
 	var connectionID sql.NullString
-	err := s.db.SQL().QueryRowContext(ctx, `SELECT source_id, connection_id, connection_name, catalog_name, schema_name, relation_name, relation_type, refreshed_at FROM ducs_meta.snapshots WHERE source_id = ?`, sourceID).Scan(&record.SourceID, &connectionID, &record.ConnectionName, &record.Catalog, &record.Schema, &record.Relation, &record.RelationType, &record.RefreshedAt)
+	err := s.db.SQL().QueryRowContext(ctx, `SELECT s.source_id, s.connection_id, s.connection_name, s.catalog_name, s.schema_name, s.relation_name, s.relation_type, s.refreshed_at
+		FROM ducs_meta.snapshots s JOIN ducs_meta.datasets d ON d.id = s.source_id
+		WHERE s.source_id = ? AND d.project_id = ?`, sourceID, projectID).Scan(&record.SourceID, &connectionID, &record.ConnectionName, &record.Catalog, &record.Schema, &record.Relation, &record.RelationType, &record.RefreshedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return snapshotRecord{}, models.NewError(models.CodeNotFound, "Snapshot metadata was not found", map[string]any{"sourceId": sourceID})
 	}

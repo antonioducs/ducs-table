@@ -57,20 +57,22 @@ type ConnectionConfig struct {
 }
 
 type ConnectionInfo struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Kind        ConnectionKind   `json:"kind"`
-	CatalogName string           `json:"catalogName"`
-	Config      ConnectionConfig `json:"config"`
-	AutoConnect bool             `json:"autoConnect"`
-	HasSecret   bool             `json:"hasSecret"`
-	Status      ConnectionStatus `json:"status"`
-	LastError   *models.AppError `json:"lastError,omitempty"`
-	CreatedAt   time.Time        `json:"createdAt"`
-	UpdatedAt   time.Time        `json:"updatedAt"`
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Kind         ConnectionKind   `json:"kind"`
+	CatalogName  string           `json:"catalogName"`
+	Config       ConnectionConfig `json:"config"`
+	AutoConnect  bool             `json:"autoConnect"`
+	HasSecret    bool             `json:"hasSecret"`
+	Status       ConnectionStatus `json:"status"`
+	LastError    *models.AppError `json:"lastError,omitempty"`
+	ProjectCount int              `json:"projectCount,omitempty"`
+	CreatedAt    time.Time        `json:"createdAt"`
+	UpdatedAt    time.Time        `json:"updatedAt"`
 }
 
 type CreateConnectionRequest struct {
+	ProjectID   string           `json:"projectId"`
 	Name        string           `json:"name"`
 	Kind        ConnectionKind   `json:"kind"`
 	CatalogName string           `json:"catalogName"`
@@ -96,7 +98,8 @@ type TestConnectionRequest struct {
 }
 
 type ConnectRequest struct {
-	ID string `json:"id"`
+	ProjectID string `json:"projectId"`
+	ID        string `json:"id"`
 }
 
 type SchemaInfo struct {
@@ -104,16 +107,19 @@ type SchemaInfo struct {
 }
 
 type ListRelationsRequest struct {
+	ProjectID    string `json:"projectId"`
 	ConnectionID string `json:"connectionId"`
 	Schema       string `json:"schema"`
 }
 
 type SnapshotRequest struct {
+	ProjectID   string `json:"projectId"`
 	RelationID  string `json:"relationId"`
 	DisplayName string `json:"displayName,omitempty"`
 	SQLName     string `json:"sqlName,omitempty"`
 }
 
 type RefreshSnapshotRequest struct {
-	SourceID string `json:"sourceId"`
+	ProjectID string `json:"projectId"`
+	SourceID  string `json:"sourceId"`
 }

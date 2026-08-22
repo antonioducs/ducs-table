@@ -2,6 +2,8 @@ import { DatabaseZap, Download, FolderOpen, ListChecks, Table2 } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/types";
+import { ProjectSelector } from "@/components/projects/ProjectSelector";
 
 export interface TopBarProps {
   onOpen: () => void;
@@ -10,16 +12,32 @@ export interface TopBarProps {
   onToggleJobs: () => void;
   activeJobs: number;
   canExport: boolean;
+  projects?: readonly Project[];
+  activeProjectId?: string;
+  switchingProjectId?: string;
+  onSelectProject?: (projectId: string) => void;
+  onNewProject?: () => void;
+  onManageProjects?: () => void;
 }
 
-export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, activeJobs, canExport }: TopBarProps) {
+export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, activeJobs, canExport, projects = [], activeProjectId, switchingProjectId, onSelectProject, onNewProject, onManageProjects }: TopBarProps) {
   return (
     <header className="flex h-11 shrink-0 items-center border-b border-border bg-card px-3 [--wails-draggable:drag]">
-      <div className="mr-5 flex min-w-0 items-center gap-2" aria-label="Duc's Table">
+      <div className="mr-2 flex min-w-0 items-center gap-2" aria-label="Duc's Table">
         <span className="grid size-6 place-items-center rounded-md border border-primary/25 bg-primary/10 text-primary">
           <Table2 className="size-3.5" aria-hidden="true" />
         </span>
         <span className="truncate text-[13px] font-semibold tracking-tight">Duc&apos;s Table</span>
+      </div>
+      <div className="mr-3 border-l border-border pl-2">
+        <ProjectSelector
+          projects={projects}
+          activeProjectId={activeProjectId}
+          switchingProjectId={switchingProjectId}
+          onSelect={onSelectProject ?? (() => undefined)}
+          onNew={onNewProject ?? (() => undefined)}
+          onManage={onManageProjects ?? (() => undefined)}
+        />
       </div>
       <TooltipProvider delayDuration={350}>
         <nav className="flex items-center gap-1 [--wails-draggable:no-drag]" aria-label="Application actions">

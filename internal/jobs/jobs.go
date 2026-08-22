@@ -24,6 +24,7 @@ const (
 
 type Snapshot struct {
 	ID         string           `json:"id"`
+	ProjectID  string           `json:"projectId"`
 	Kind       string           `json:"kind"`
 	Label      string           `json:"label,omitempty"`
 	SourceID   string           `json:"sourceId,omitempty"`
@@ -36,6 +37,16 @@ type Snapshot struct {
 	CreatedAt  time.Time        `json:"createdAt"`
 	StartedAt  *time.Time       `json:"startedAt,omitempty"`
 	FinishedAt *time.Time       `json:"finishedAt,omitempty"`
+}
+
+// Metadata captures the immutable context of a job at submission time. In
+// particular, ProjectID must never be inferred from whichever project happens
+// to be open when asynchronous work completes.
+type Metadata struct {
+	ProjectID string `json:"projectId"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label,omitempty"`
+	SourceID  string `json:"sourceId,omitempty"`
 }
 
 type Reporter interface {
@@ -90,15 +101,16 @@ func NewManagerWithContext(parent context.Context, concurrency int, callback Cal
 
 func New(concurrency int, callback Callback) *Manager { return NewManager(concurrency, callback) }
 
-func (m *Manager) Submit(kind string, task Task) (Snapshot, error) {
-	return m.SubmitWithMetadata(kind, "", "", task)
-}
-
-// SubmitWithMetadata associates a user-facing label and source with a job while
-// keeping Submit's compact API available to package callers and tests.
-func (m *Manager) SubmitWithMetadata(kind, label, sourceID string, task Task) (Snapshot, error) {
+// Submit associates immutable project and display metadata with a task.
+func (m *Manager) Submit(metadata Metadata, task Task) (Snapshot, error) {
 	if task == nil {
 		return Snapshot{}, models.NewError(models.CodeInvalidArgument, "Job task is required", nil)
+	}
+	if metadata.ProjectID == "" {
+		return Snapshot{}, models.NewError(models.CodeInvalidArgument, "Project ID is required", nil)
+	}
+	if metadata.Kind == "" {
+		return Snapshot{}, models.NewError(models.CodeInvalidArgument, "Job kind is required", nil)
 	}
 	id, err := models.NewID()
 	if err != nil {
@@ -106,7 +118,7 @@ func (m *Manager) SubmitWithMetadata(kind, label, sourceID string, task Task) (S
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
 	j := &job{snapshot: Snapshot{
-		ID: id, Kind: kind, Label: label, SourceID: sourceID,
+		ID: id, ProjectID: metadata.ProjectID, Kind: metadata.Kind, Label: metadata.Label, SourceID: metadata.SourceID,
 		State: StateQueued, CreatedAt: time.Now().UTC(),
 	}, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 
@@ -123,6 +135,19 @@ func (m *Manager) SubmitWithMetadata(kind, label, sourceID string, task Task) (S
 	m.emit(snapshot)
 	go m.run(j, task)
 	return snapshot, nil
+}
+
+// HasActiveProject reports whether a project currently owns queued or running
+// work. It is used to prevent archiving a context out from under its jobs.
+func (m *Manager) HasActiveProject(projectID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, j := range m.jobs {
+		if j.snapshot.ProjectID == projectID && !terminal(j.snapshot.State) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) run(j *job, task Task) {

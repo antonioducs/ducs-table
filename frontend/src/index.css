@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #080b09;
+  --color-foreground: #eef6f1;
+  --color-card: #0d120f;
+  --color-card-foreground: #eef6f1;
+  --color-popover: #0d120f;
+  --color-popover-foreground: #eef6f1;
+  --color-primary: #32e67e;
+  --color-primary-foreground: #041009;
+  --color-primary-hover: #50ef94;
+  --color-secondary: #141c18;
+  --color-secondary-foreground: #dce9e1;
+  --color-muted: #101713;
+  --color-muted-foreground: #8d9c94;
+  --color-accent: #17231d;
+  --color-accent-foreground: #dff9e9;
+  --color-border: #223029;
+  --color-input: #1b2822;
+  --color-ring: #32e67e;
+  --color-destructive: #ef6464;
+  --color-warning: #e4b95e;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+  background: #080b09;
+  color: #eef6f1;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: #223029;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #080b09;
+  color: #eef6f1;
+  font-size: 13px;
+  user-select: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+[role="button"],
+input,
+textarea,
+[tabindex] {
+  outline-color: #32e67e;
+}
+
+::selection {
+  color: #eef6f1;
+  background: rgb(50 230 126 / 28%);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0f0c;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 30px;
+  border: 2px solid #0a0f0c;
+  border-radius: 999px;
+  background: #26382f;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #345244;
+}
+
+.font-mono,
+code,
+pre {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+}
+
+.ducs-shell {
+  --wails-drop-target: drop;
+  width: 100%;
+  height: 100%;
+  min-width: 1080px;
+  min-height: 680px;
+  background: #080b09;
+}
+
+.ducs-grid.ag-theme-quartz-dark,
+.ducs-grid.ag-theme-quartz {
+  --ag-background-color: #0a0f0c;
+  --ag-foreground-color: #dce9e1;
+  --ag-header-background-color: #101713;
+  --ag-header-foreground-color: #c9d8cf;
+  --ag-border-color: #223029;
+  --ag-secondary-border-color: #18231d;
+  --ag-row-border-color: #18231d;
+  --ag-odd-row-background-color: #0b100d;
+  --ag-row-hover-color: rgb(50 230 126 / 6%);
+  --ag-selected-row-background-color: rgb(50 230 126 / 12%);
+  --ag-input-focus-border-color: #32e67e;
+  --ag-range-selection-border-color: #32e67e;
+  --ag-checkbox-checked-color: #32e67e;
+  --ag-accent-color: #32e67e;
+  --ag-icon-color: #8d9c94;
+  --ag-header-column-resize-handle-color: #345244;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+  --ag-font-size: 12px;
+  --ag-grid-size: 5px;
+  --ag-border-radius: 0;
+  --ag-wrapper-border-radius: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ducs-grid .ag-root-wrapper {
+  border: 0;
+  background: #0a0f0c;
+}
+
+.ducs-grid .ag-header {
+  border-bottom: 1px solid #223029;
+}
+
+.ducs-grid .ag-header-cell,
+.ducs-grid .ag-cell {
+  border-right: 1px solid #18231d;
+}
+
+.ducs-grid .ag-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ducs-grid .ag-cell-focus,
+.ducs-grid .ag-cell-range-selected {
+  border-color: #32e67e !important;
+}
+
+.ducs-grid .ag-overlay-no-rows-center,
+.ducs-grid .ag-overlay-loading-center {
+  border: 1px solid #223029;
+  border-radius: 8px;
+  background: #0d120f;
+  color: #8d9c94;
+  box-shadow: none;
+}
+
+.cm-editor {
+  height: 100%;
+  background: #0a0f0c !important;
+  color: #dce9e1;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+
+.cm-scroller {
+  overflow: auto;
+}
+
+.cm-gutters {
+  border-right: 1px solid #18231d !important;
+  background: #0d120f !important;
+  color: #56675e !important;
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: rgb(50 230 126 / 5%) !important;
+}
+
+.cm-cursor {
+  border-left-color: #32e67e !important;
+}
+
+.cm-selectionBackground,
+.cm-content ::selection {
+  background: rgb(50 230 126 / 20%) !important;
+}
+
+@keyframes ducs-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.ducs-pulse {
+  animation: ducs-pulse 1.3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

@@ -1,0 +1,8 @@
+[
+  {"order_id": 101, "customer_id": 1, "total": 120.50, "paid": true},
+  {"order_id": 102, "customer_id": 1, "total": 79.50, "paid": true},
+  {"order_id": 103, "customer_id": 2, "total": 15.00, "paid": false},
+  {"order_id": 104, "customer_id": 3, "total": 250.00, "paid": true},
+  {"order_id": 105, "customer_id": 3, "total": 50.00, "paid": true}
+]
+

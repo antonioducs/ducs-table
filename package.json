@@ -1,0 +1,12 @@
+{
+  "name": "ducs-table-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "wails dev",
+    "build": "wails build -clean",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "lint": "npm --prefix frontend run lint && node scripts/check-gofmt.mjs",
+    "test:unit": "npm --prefix frontend run test:unit"
+  }
+}
+

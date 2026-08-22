@@ -1,0 +1,4 @@
+order_id	person_id	amount	status
+100	1	19.95	paid
+101	2	5.50	pending
+102	1	125.00	paid

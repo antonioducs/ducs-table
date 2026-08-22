@@ -1,0 +1,5 @@
+id,name,age,active,joined_at,city
+1,Alice,34,true,2024-01-15,São Paulo
+2,Bob,28,false,2023-11-02,New York
+3,Carla,41,true,2022-06-30,Lisbon
+4,Diego,,true,2025-03-08,

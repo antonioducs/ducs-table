@@ -1,0 +1,5 @@
+customer_id,name,email,segment
+1,Ana Silva,ana@example.test,enterprise
+2,Bruno Costa,bruno@example.test,small-business
+3,Carla Lima,carla@example.test,enterprise
+

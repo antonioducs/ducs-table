@@ -1,0 +1,292 @@
+.ducs-data-grid {
+  --ag-background-color: var(--color-background, #080b09);
+  --ag-foreground-color: var(--color-foreground, #eef6f1);
+  --ag-header-background-color: #0d1210;
+  --ag-header-foreground-color: #dce8e1;
+  --ag-border-color: #27332c;
+  --ag-row-border-color: #1d2822;
+  --ag-odd-row-background-color: #0a0f0c;
+  --ag-selected-row-background-color: rgb(50 230 126 / 12%);
+  --ag-row-hover-color: rgb(50 230 126 / 7%);
+  --ag-input-focus-border-color: var(--color-primary, #32e67e);
+  --ag-range-selection-border-color: var(--color-primary, #32e67e);
+  --ag-accent-color: var(--color-primary, #32e67e);
+  --ag-font-family: inherit;
+  --ag-font-size: 12px;
+  --ag-grid-size: 4px;
+  --ag-cell-horizontal-padding: 10px;
+  --ag-wrapper-border-radius: 0;
+  --ag-header-column-resize-handle-color: #3a5144;
+  display: flex;
+  min-height: 220px;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-background, #080b09);
+  color: var(--color-foreground, #eef6f1);
+}
+
+/* AG Grid declares its defaults on the theme element itself, so repeat the
+   workspace tokens there instead of relying only on inherited variables. */
+.ducs-data-grid .ag-theme-quartz-dark {
+  --ag-background-color: #0a0f0c;
+  --ag-foreground-color: #dce9e1;
+  --ag-header-background-color: #101713;
+  --ag-header-foreground-color: #c9d8cf;
+  --ag-border-color: #223029;
+  --ag-secondary-border-color: #18231d;
+  --ag-row-border-color: #18231d;
+  --ag-odd-row-background-color: #0b100d;
+  --ag-row-hover-color: rgb(50 230 126 / 6%);
+  --ag-selected-row-background-color: rgb(50 230 126 / 12%);
+  --ag-input-focus-border-color: #32e67e;
+  --ag-range-selection-border-color: #32e67e;
+  --ag-checkbox-checked-color: #32e67e;
+  --ag-accent-color: #32e67e;
+  --ag-icon-color: #8d9c94;
+}
+
+.ducs-data-grid__preparing {
+  flex: none;
+  border-bottom: 1px solid #294035;
+  background: #10251a;
+  padding: 7px 12px;
+  color: #9ee9bd;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ducs-data-grid__toolbar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  min-height: 40px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #27332c;
+  background: #0b100d;
+  padding: 6px 8px;
+}
+
+.ducs-data-grid__columns-control {
+  position: relative;
+}
+
+.ducs-data-grid__columns-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 70;
+  width: min(360px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid #304238;
+  border-radius: 8px;
+  background: #101612;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 55%);
+}
+
+.ducs-data-grid__column-search {
+  position: relative;
+  border-bottom: 1px solid #27332c;
+  padding: 8px;
+}
+
+.ducs-data-grid__column-search > svg {
+  position: absolute;
+  top: 17px;
+  left: 17px;
+  z-index: 1;
+  width: 13px;
+  height: 13px;
+  color: #84978c;
+  pointer-events: none;
+}
+
+.ducs-data-grid__column-search input {
+  padding-left: 28px;
+}
+
+.ducs-data-grid__column-list {
+  max-height: min(320px, 48vh);
+  overflow: auto;
+  padding: 5px;
+}
+
+.ducs-data-grid__column-option {
+  display: grid;
+  min-height: 32px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border-radius: 5px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+
+.ducs-data-grid__column-option:hover,
+.ducs-data-grid__column-option:focus-within {
+  background: #17221c;
+}
+
+.ducs-data-grid__column-option > span {
+  overflow: hidden;
+  color: #e6efe9;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ducs-data-grid__column-option > small {
+  max-width: 92px;
+  overflow: hidden;
+  color: #84978c;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ducs-data-grid__column-empty {
+  margin: 0;
+  padding: 16px 10px;
+  color: #84978c;
+  font-size: 12px;
+  text-align: center;
+}
+
+.ducs-data-grid__columns-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  border-top: 1px solid #27332c;
+  padding: 5px;
+}
+
+.ducs-data-grid__content {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.ducs-data-grid__grid {
+  width: 100%;
+  height: 100%;
+}
+
+.ducs-data-grid .ag-root-wrapper {
+  border: 0;
+}
+
+.ducs-data-grid .ag-header-cell,
+.ducs-data-grid .ag-floating-filter {
+  font-weight: 500;
+}
+
+.ducs-data-grid .ag-cell-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ducs-data-grid .ag-cell-focus {
+  box-shadow: inset 0 0 0 1px var(--color-primary, #32e67e);
+}
+
+.ducs-data-grid__cell--number {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ducs-data-grid__cell--boolean {
+  color: #a8dcb9;
+}
+
+.ducs-data-grid__cell--date {
+  color: #c4d8cc;
+  font-variant-numeric: tabular-nums;
+}
+
+.ducs-data-grid__empty {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 170px;
+  place-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: #84978c;
+  text-align: center;
+}
+
+.ducs-data-grid__empty strong {
+  color: #dfeae3;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ducs-data-grid__empty span {
+  max-width: 520px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ducs-data-grid__viewer {
+  max-width: min(760px, calc(100vw - 32px));
+}
+
+.ducs-data-grid__viewer-status,
+.ducs-data-grid__viewer-error {
+  border-radius: 5px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.ducs-data-grid__viewer-status {
+  background: #142019;
+  color: #a9bbb0;
+}
+
+.ducs-data-grid__viewer-error {
+  border: 1px solid #683b3b;
+  background: #281616;
+  color: #ffb6b6;
+}
+
+.ducs-data-grid__full-value {
+  min-height: 130px;
+  max-height: 52vh;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #304238;
+  border-radius: 6px;
+  background: #080c09;
+  padding: 12px;
+  color: #e8f2ec;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ducs-data-grid__full-value:focus-visible {
+  outline: 2px solid var(--color-primary, #32e67e);
+  outline-offset: 2px;
+}
+
+.ducs-data-grid__viewer-actions {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ducs-data-grid__viewer-actions > span {
+  color: #9ee9bd;
+  font-size: 11px;
+}

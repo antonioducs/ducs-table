@@ -132,25 +132,50 @@ func (d *DB) WithMutation(ctx context.Context, fn func(*sql.Conn) error) error {
 // WithTx serializes a transaction and handles rollback on every error path.
 func (d *DB) WithTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	return d.WithMutation(ctx, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		committed := false
-		defer func() {
-			if !committed {
-				_ = tx.Rollback()
-			}
-		}()
-		if err := fn(tx); err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-		committed = true
-		return nil
+		return runTx(ctx, conn, fn)
 	})
+}
+
+// WithReservedMutation applies the global catalog mutation lock while using a
+// caller-owned connection. FederatedSession acquires its own lock first, which
+// establishes the fixed session -> mutation -> transaction lock order.
+func (d *DB) WithReservedMutation(ctx context.Context, conn *sql.Conn, fn func(*sql.Conn) error) error {
+	if conn == nil {
+		return errors.New("database: nil reserved connection")
+	}
+	if err := d.acquire(ctx); err != nil {
+		return err
+	}
+	defer d.release()
+	return fn(conn)
+}
+
+// WithTxOnConn serializes a transaction on a caller-owned connection.
+func (d *DB) WithTxOnConn(ctx context.Context, conn *sql.Conn, fn func(*sql.Tx) error) error {
+	return d.WithReservedMutation(ctx, conn, func(conn *sql.Conn) error {
+		return runTx(ctx, conn, fn)
+	})
+}
+
+func runTx(ctx context.Context, conn *sql.Conn, fn func(*sql.Tx) error) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (d *DB) Close() error {

@@ -42,6 +42,96 @@ export interface SourceInfo {
   originalSQL?: string;
   createdAt?: string;
   updatedAt?: string;
+  snapshot?: SnapshotOrigin;
+}
+
+export interface SnapshotOrigin {
+  connectionId?: string;
+  connectionName: string;
+  catalog: string;
+  schema: string;
+  relation: string;
+  relationType: string;
+  refreshedAt: string;
+}
+
+export type ConnectionKind = "postgres" | "mongo";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+export interface PostgresConfig {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  sslMode: "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
+  schema?: string;
+  connectTimeoutSeconds: number;
+  poolSize: number;
+}
+
+export interface MongoConfig {
+  mode: "mongodb" | "mongodb+srv";
+  hosts: string[];
+  database: string;
+  username?: string;
+  authSource?: string;
+  tls: boolean;
+  replicaSet?: string;
+  directConnection?: boolean;
+  readPreference?: "primary" | "primaryPreferred" | "secondary" | "secondaryPreferred" | "nearest";
+  connectTimeoutSeconds: number;
+  experimentalConsent: boolean;
+}
+
+export interface ConnectionConfig {
+  postgres?: PostgresConfig;
+  mongo?: MongoConfig;
+}
+
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  kind: ConnectionKind;
+  catalogName: string;
+  config: ConnectionConfig;
+  autoConnect: boolean;
+  hasSecret: boolean;
+  status: ConnectionStatus;
+  lastError?: AppErrorInfo;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConnectionInput {
+  name: string;
+  kind: ConnectionKind;
+  catalogName: string;
+  config: ConnectionConfig;
+  autoConnect: boolean;
+  password?: string;
+}
+
+export interface UpdateConnectionInput extends Omit<ConnectionInput, "kind"> { id: string }
+export interface TestConnectionInput { id?: string; kind?: ConnectionKind; config: ConnectionConfig; password?: string }
+
+export interface ExternalRelationInfo {
+  id: string;
+  connectionId: string;
+  provider: "postgres" | "mongo";
+  catalog: string;
+  schema: string;
+  name: string;
+  relationType: "table" | "view" | "collection" | string;
+  qualifiedName: string;
+  columns: ColumnInfo[];
+  defaultOrder: string[];
+  pagingStable: boolean;
+}
+
+export interface GridResourceRef {
+  kind: "source" | "external";
+  sourceId?: string;
+  relationId?: string;
 }
 
 export interface AppErrorInfo {
@@ -83,6 +173,7 @@ export interface Job {
 
 export interface BootstrapState {
   sources: SourceInfo[];
+  connections: ConnectionInfo[];
   savedQueries: SavedQuery[];
   jobs: Job[];
   ready?: boolean;
@@ -119,7 +210,8 @@ export interface RowFilter {
 }
 
 export interface RowsRequest {
-  sourceId: string;
+  resource: GridResourceRef;
+  sourceId?: string;
   offset: number;
   limit: number;
   sorts?: RowSort[];
@@ -128,25 +220,30 @@ export interface RowsRequest {
 }
 
 export interface RowsResponse {
-  sourceId: string;
+  resource: GridResourceRef;
+  sourceId?: string;
   columns: ColumnInfo[];
   rows: DataRow[];
   offset: number;
   limit: number;
-  totalRows: number;
+  totalRows: number | null;
+  hasMore: boolean;
+  pagingStable: boolean;
 }
 
 export interface CountRowsRequest {
-  sourceId: string;
+  resource: GridResourceRef;
+  sourceId?: string;
   filters?: RowFilter[];
 }
 
 export interface CountRowsResult {
-  count: number;
+  count: number | null;
 }
 
 export interface GetCellValueRequest {
-  sourceId: string;
+  resource: GridResourceRef;
+  sourceId?: string;
   rowIndex: number;
   column: string;
   sorts?: RowSort[];
@@ -219,7 +316,8 @@ export interface SaveResultAsTableRequest {
 export type ExportScope = "entire" | "current-view";
 
 export interface ExportRequest {
-  sourceId: string;
+  resource: GridResourceRef;
+  sourceId?: string;
   destination?: string;
   scope: ExportScope;
   filters?: RowFilter[];
@@ -249,4 +347,8 @@ export type BridgeEventMap = {
   "ducs:dataset-failed": DatasetFailedEvent;
   "ducs:result-ready": QueryResult | SourceInfo;
   "ducs:file-drop": FileDropEvent | string[];
+  "ducs:connection-updated": ConnectionInfo;
+  "ducs:catalog-invalidated": { connectionId: string };
+  "ducs:snapshot-ready": SourceInfo;
+  "ducs:snapshot-failed": { sourceId?: string; relationId?: string; error: AppErrorInfo };
 };

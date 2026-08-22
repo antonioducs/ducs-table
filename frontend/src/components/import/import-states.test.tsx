@@ -24,7 +24,7 @@ describe("import states", () => {
     expect(screen.getByText("Drop a data file anywhere")).toBeInTheDocument();
     expect(screen.getByText("CSV, TSV, JSON, JSONL or XLSX — processed locally")).toBeInTheDocument();
     expect(screen.getByText("Local")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Choose files" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open data file" }));
     expect(choose).toHaveBeenCalledOnce();
   });
 
@@ -36,4 +36,3 @@ describe("import states", () => {
     expect(screen.getByRole("button", { name: /Retry options/i })).toBeInTheDocument();
   });
 });
-

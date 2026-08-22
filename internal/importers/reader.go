@@ -1,12 +1,9 @@
 package importers
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"ducs-table/internal/models"
@@ -73,41 +70,6 @@ func csvReaderAttempts(file FileInfo, options Options) ([]readerAttempt, error) 
 		attempts = append(attempts, build(true))
 	}
 	return attempts, nil
-}
-
-type sqlExecutor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
-type excelLoader struct {
-	mu sync.Mutex
-}
-
-func (l *excelLoader) ensure(ctx context.Context, executor sqlExecutor) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if _, err := executor.ExecContext(ctx, `LOAD excel`); err == nil {
-		return nil
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, err := executor.ExecContext(ctx, `LOAD excel`); err == nil {
-		return nil
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	// INSTALL is intentionally attempted only after LOAD, so an existing local
-	// extension works offline. DuckDB writes into the configured private cache.
-	if _, err := executor.ExecContext(ctx, `INSTALL excel`); err != nil {
-		return models.WrapError(models.CodeXLSXExtensionUnavailable, "The DuckDB Excel extension is unavailable", err, nil)
-	}
-	if _, err := executor.ExecContext(ctx, `LOAD excel`); err != nil {
-		return models.WrapError(models.CodeXLSXExtensionUnavailable, "The DuckDB Excel extension could not be loaded", err, nil)
-	}
-	return nil
 }
 
 func readerFailure(fileType FileType, err error) error {

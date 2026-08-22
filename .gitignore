@@ -1,12 +1,32 @@
-# Wails build output
+# Dependencies
+node_modules/
+
+# Wails / frontend generated output
 build/bin/
 frontend/dist/
-frontend/node_modules/
 frontend/wailsjs/
 frontend/package.json.md5
 app-dist/
 
-# Local development
+# Go-generated artifacts
+*.test
+*.out
+*.prof
+
+# Local environment and tooling
+.env
+.env.*
+!.env.example
+.maestrly/
+.idea/
+.vscode/
+
+# OS/editor noise
 .DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Logs and test coverage
 *.log
 coverage/

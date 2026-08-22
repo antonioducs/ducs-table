@@ -2,8 +2,11 @@ import type {
   BootstrapState,
   BridgeEventMap,
   CellValueResult,
+  ConnectionInfo,
+  ConnectionInput,
   CountRowsRequest,
   ExportRequest,
+  ExternalRelationInfo,
   GetCellValueRequest,
   ImportPathsRequest,
   ImportPathsResult,
@@ -12,6 +15,8 @@ import type {
   QueryRequest,
   QueryResult,
   RowsRequest,
+  TestConnectionInput,
+  UpdateConnectionInput,
   SavedQuery,
   SaveQueryRequest,
   SaveResultAsTableRequest,
@@ -19,6 +24,7 @@ import type {
   WorkbookSheets,
   XLSXImportRequest,
 } from "@/types";
+import { installWailsErrorNormalizer } from "@/lib/wails-error-normalizer";
 
 type AppAPI = NonNullable<NonNullable<NonNullable<Window["go"]>["main"]>["App"]>;
 
@@ -26,6 +32,7 @@ const friendlyMissingMessage =
   "Duc's Table desktop bridge is unavailable. Run the app through Wails to use local files.";
 
 function app(): AppAPI {
+  installWailsErrorNormalizer();
   const api = window.go?.main?.App;
   if (!api) throw new Error(friendlyMissingMessage);
   return api;
@@ -71,6 +78,7 @@ export function normalizeSource(value: SourceInfo | Record<string, unknown>): So
       : undefined,
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
+    snapshot: raw.snapshot && typeof raw.snapshot === "object" ? raw.snapshot as SourceInfo["snapshot"] : undefined,
   };
 }
 
@@ -84,6 +92,10 @@ function normalizeImportResult(result: ImportPathsResult): ImportPathsResult {
   return { ...result, sources: normalizeSources(result.sources) };
 }
 
+function normalizeRelation(value: ExternalRelationInfo): ExternalRelationInfo {
+  return { ...value, columns: Array.isArray(value.columns) ? value.columns : [], defaultOrder: Array.isArray(value.defaultOrder) ? value.defaultOrder : [], pagingStable: Boolean(value.pagingStable) };
+}
+
 export const bridge = {
   async Bootstrap(): Promise<BootstrapState> {
     const state = await app().Bootstrap();
@@ -92,6 +104,7 @@ export const bridge = {
       sources: normalizeSources(raw.sources ?? [...(raw.datasets ?? []), ...(raw.results ?? [])]),
       savedQueries: raw.savedQueries ?? [],
       jobs: raw.jobs ?? [],
+      connections: raw.connections ?? [],
       ready: raw.ready ?? true,
     };
   },
@@ -130,7 +143,7 @@ export const bridge = {
     return { value: result };
   },
 
-  async CountRows(request: CountRowsRequest): Promise<number> {
+  async CountRows(request: CountRowsRequest): Promise<number | null> {
     const result = await app().CountRows(request);
     return typeof result === "number" ? result : result.count;
   },
@@ -167,6 +180,24 @@ export const bridge = {
   CancelJob(jobId: string): Promise<Job> {
     return app().CancelJob(jobId);
   },
+
+  ListConnections(): Promise<ConnectionInfo[]> { return app().ListConnections(); },
+  CreateConnection(request: ConnectionInput): Promise<ConnectionInfo> { return app().CreateConnection(request); },
+  UpdateConnection(request: UpdateConnectionInput): Promise<ConnectionInfo> { return app().UpdateConnection(request); },
+  DeleteConnection(id: string): Promise<void> { return app().DeleteConnection(id); },
+  TestConnection(request: TestConnectionInput): Promise<void> { return app().TestConnection(request); },
+  ConnectConnection(id: string): Promise<ConnectionInfo> { return app().ConnectConnection({ id }); },
+  DisconnectConnection(id: string): Promise<void> { return app().DisconnectConnection(id); },
+  RefreshConnectionCatalog(id: string): Promise<void> { return app().RefreshConnectionCatalog(id); },
+  ListConnectionSchemas(id: string): Promise<{ name: string }[]> { return app().ListConnectionSchemas(id); },
+  ListExternalRelations(connectionId: string, schema: string): Promise<ExternalRelationInfo[]> {
+    return app().ListExternalRelations({ connectionId, schema }).then((relations) => relations.map(normalizeRelation));
+  },
+  GetExternalRelation(id: string): Promise<ExternalRelationInfo> { return app().GetExternalRelation(id).then(normalizeRelation); },
+  SnapshotExternalRelation(relationId: string, displayName?: string): Promise<Job> {
+    return app().SnapshotExternalRelation({ relationId, displayName });
+  },
+  RefreshSnapshot(sourceId: string): Promise<Job> { return app().RefreshSnapshot({ sourceId }); },
 
   on<K extends keyof BridgeEventMap>(eventName: K, callback: (payload: BridgeEventMap[K]) => void): () => void {
     const runtime = window.runtime;

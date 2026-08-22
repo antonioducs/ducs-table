@@ -1,7 +1,12 @@
 // Package grid builds validated, parameterized views over workspace sources.
 package grid
 
-import "ducs-table/internal/models"
+import (
+	"context"
+	"database/sql"
+
+	"ducs-table/internal/models"
+)
 
 type Sort struct {
 	Column    string `json:"column"`
@@ -17,26 +22,31 @@ type Filter struct {
 }
 
 type RowsRequest struct {
-	SourceID       string   `json:"sourceId"`
-	Offset         int64    `json:"offset"`
-	Limit          int      `json:"limit"`
-	Sorts          []Sort   `json:"sorts,omitempty"`
-	Filters        []Filter `json:"filters,omitempty"`
-	VisibleColumns []string `json:"visibleColumns,omitempty"`
+	Resource       models.GridResourceRef `json:"resource"`
+	SourceID       string                 `json:"sourceId"`
+	Offset         int64                  `json:"offset"`
+	Limit          int                    `json:"limit"`
+	Sorts          []Sort                 `json:"sorts,omitempty"`
+	Filters        []Filter               `json:"filters,omitempty"`
+	VisibleColumns []string               `json:"visibleColumns,omitempty"`
 }
 
 type RowsResponse struct {
-	SourceID  string              `json:"sourceId"`
-	Columns   []models.ColumnInfo `json:"columns"`
-	Rows      []map[string]any    `json:"rows"`
-	Offset    int64               `json:"offset"`
-	Limit     int                 `json:"limit"`
-	TotalRows int64               `json:"totalRows"`
+	Resource     models.GridResourceRef `json:"resource"`
+	SourceID     string                 `json:"sourceId"`
+	Columns      []models.ColumnInfo    `json:"columns"`
+	Rows         []map[string]any       `json:"rows"`
+	Offset       int64                  `json:"offset"`
+	Limit        int                    `json:"limit"`
+	TotalRows    *int64                 `json:"totalRows"`
+	HasMore      bool                   `json:"hasMore"`
+	PagingStable bool                   `json:"pagingStable"`
 }
 
 // SelectRequest is shared with export. A zero Limit means no pagination when
 // passed to BuildSelect with paginate=false.
 type SelectRequest struct {
+	Resource models.GridResourceRef
 	SourceID string
 	Columns  []string
 	Sorts    []Sort
@@ -48,8 +58,15 @@ type SelectRequest struct {
 // BuiltSelect is safe to execute: every identifier was resolved against the
 // source catalog and every user value is in Args.
 type BuiltSelect struct {
-	SQL     string
-	Args    []any
-	Source  models.SourceInfo
-	Columns []models.ColumnInfo
+	SQL      string
+	Args     []any
+	Source   models.SourceInfo
+	Relation *models.ExternalRelationInfo
+	Resource models.GridResourceRef
+	Columns  []models.ColumnInfo
+}
+
+type ExternalResolver interface {
+	ResolveExternal(context.Context, string) (models.ExternalRelationInfo, error)
+	WithFederatedConn(context.Context, func(*sql.Conn) error) error
 }

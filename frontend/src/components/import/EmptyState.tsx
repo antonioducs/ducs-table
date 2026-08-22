@@ -1,13 +1,14 @@
-import { Braces, FileUp, Gauge, HardDrive, Table2 } from "lucide-react";
+import { Braces, DatabaseZap, FileUp, Gauge, HardDrive, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export interface EmptyStateProps {
   onChoose: () => void;
+  onConnect?: () => void;
   dragActive?: boolean;
 }
 
-export function EmptyState({ onChoose, dragActive = false }: EmptyStateProps) {
+export function EmptyState({ onChoose, onConnect, dragActive = false }: EmptyStateProps) {
   return (
     <section
       className={cn("relative grid h-full place-items-center overflow-hidden bg-background p-8 transition-colors", dragActive && "bg-primary/5")}
@@ -25,7 +26,7 @@ export function EmptyState({ onChoose, dragActive = false }: EmptyStateProps) {
           {dragActive ? (
             <p className="flex h-9 items-center justify-center gap-1.5 text-[12px] font-medium text-primary"><FileUp className="size-3.5" aria-hidden="true" /> Release to import files</p>
           ) : (
-            <Button className="h-9 px-4" onClick={onChoose}><FileUp aria-hidden="true" /> Choose files</Button>
+            <span className="inline-flex gap-2"><Button className="h-9 px-4" onClick={onChoose}><FileUp aria-hidden="true" /> Open data file</Button><Button variant="secondary" className="h-9 px-4" onClick={onConnect}><DatabaseZap aria-hidden="true" /> Connect database</Button></span>
           )}
         </div>
         <div className="mt-8 grid grid-cols-3 gap-2 text-left">

@@ -59,8 +59,8 @@ func TestSyntheticLargeDatasetBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.TotalRows != 100000 || len(page.Rows) != 250 || page.Rows[0]["id"] != int64(50000) {
-		t.Fatalf("unexpected synthetic block: total=%d rows=%d first=%v", page.TotalRows, len(page.Rows), page.Rows[0]["id"])
+	if page.TotalRows == nil || *page.TotalRows != 100000 || len(page.Rows) != 250 || page.Rows[0]["id"] != int64(50000) {
+		t.Fatalf("unexpected synthetic block: total=%v rows=%d first=%v", page.TotalRows, len(page.Rows), page.Rows[0]["id"])
 	}
 }
 
@@ -75,7 +75,7 @@ func TestRowsPaginationSortAndProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.TotalRows != 4 || len(response.Rows) != 2 {
+	if response.TotalRows == nil || *response.TotalRows != 4 || len(response.Rows) != 2 {
 		t.Fatalf("unexpected page metadata: %#v", response)
 	}
 	if response.Rows[0]["name"] != "Carla" || response.Rows[1]["name"] != "Alice" {

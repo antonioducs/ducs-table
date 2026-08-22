@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ducs-table/internal/database"
+	"ducs-table/internal/extensions"
 	"ducs-table/internal/models"
 	"ducs-table/internal/workspace"
 )
@@ -16,11 +17,17 @@ import (
 const maxPreviewRows = 200
 
 type Service struct {
-	db    *database.DB
-	excel excelLoader
+	db         *database.DB
+	extensions *extensions.Manager
 }
 
-func New(db *database.DB) *Service { return &Service{db: db} }
+func New(db *database.DB, managers ...*extensions.Manager) *Service {
+	manager := extensions.NewManager()
+	if len(managers) > 0 && managers[0] != nil {
+		manager = managers[0]
+	}
+	return &Service{db: db, extensions: manager}
+}
 
 func (s *Service) Validate(path string) (FileInfo, error)   { return ValidateFile(path) }
 func (s *Service) ListSheets(path string) ([]string, error) { return ListSheets(path) }
@@ -57,7 +64,7 @@ func (s *Service) PreviewFile(ctx context.Context, request PreviewRequest) (Prev
 	}
 	defer conn.Close()
 	if file.Type == FileXLSX {
-		if err := s.excel.ensure(ctx, conn); err != nil {
+		if err := s.extensions.Ensure(ctx, conn, "excel"); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 				return PreviewResult{}, models.WrapError(models.CodeCancelled, "Preview was cancelled", context.Canceled, nil)
 			}
@@ -153,7 +160,7 @@ func (s *Service) Materialize(ctx context.Context, request MaterializeRequest) (
 	var lastErr error
 	err = s.db.WithMutation(ctx, func(conn *sql.Conn) error {
 		if file.Type == FileXLSX {
-			if err := s.excel.ensure(ctx, conn); err != nil {
+			if err := s.extensions.Ensure(ctx, conn, "excel"); err != nil {
 				return err
 			}
 		}

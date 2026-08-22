@@ -37,3 +37,7 @@ export function formatElapsed(start?: string, end?: string, now = Date.now()): s
 export function quoteIdentifier(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
 }
+
+export function quoteQualifiedIdentifier(parts: readonly string[]): string {
+  return parts.map(quoteIdentifier).join(".");
+}

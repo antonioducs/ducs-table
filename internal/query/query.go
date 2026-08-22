@@ -29,10 +29,21 @@ type SaveResultRequest struct {
 }
 
 type Service struct {
-	db *database.DB
+	db     *database.DB
+	runner transactionRunner
 }
 
-func New(db *database.DB) *Service { return &Service{db: db} }
+type transactionRunner interface {
+	WithTx(context.Context, func(*sql.Tx) error) error
+}
+
+func New(db *database.DB, runners ...transactionRunner) *Service {
+	var runner transactionRunner = db
+	if len(runners) > 0 && runners[0] != nil {
+		runner = runners[0]
+	}
+	return &Service{db: db, runner: runner}
+}
 
 // Run materializes a read-only query into result.__tmp_<uuid> and registers it
 // as ephemeral in the same transaction.
@@ -49,7 +60,7 @@ func (s *Service) Run(ctx context.Context, userSQL string) (QueryResultInfo, err
 	qualified := database.QuoteQualified("result", tableName)
 	started := time.Now()
 	var source models.SourceInfo
-	err = s.db.WithTx(ctx, func(tx *sql.Tx) error {
+	err = s.runner.WithTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "SET search_path = 'data,result,main'"); err != nil {
 			return err
 		}

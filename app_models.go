@@ -1,6 +1,7 @@
 package main
 
 import (
+	"ducs-table/internal/connections"
 	"ducs-table/internal/grid"
 	"ducs-table/internal/importers"
 	"ducs-table/internal/jobs"
@@ -10,11 +11,12 @@ import (
 // BootstrapState is intentionally metadata-only. Table rows are always fetched
 // through GetRows and never stored in the frontend session state.
 type BootstrapState struct {
-	Datasets     []models.SourceInfo `json:"datasets"`
-	Results      []models.SourceInfo `json:"results"`
-	SavedQueries []models.SavedQuery `json:"savedQueries"`
-	Jobs         []jobs.Snapshot     `json:"jobs"`
-	Ready        bool                `json:"ready"`
+	Datasets     []models.SourceInfo          `json:"datasets"`
+	Results      []models.SourceInfo          `json:"results"`
+	SavedQueries []models.SavedQuery          `json:"savedQueries"`
+	Jobs         []jobs.Snapshot              `json:"jobs"`
+	Connections  []connections.ConnectionInfo `json:"connections"`
+	Ready        bool                         `json:"ready"`
 }
 
 type PreviewSource struct {
@@ -57,20 +59,22 @@ type XLSXImportRequest struct {
 }
 
 type CountRowsRequest struct {
-	SourceID string        `json:"sourceId"`
-	Filters  []grid.Filter `json:"filters,omitempty"`
+	Resource models.GridResourceRef `json:"resource"`
+	SourceID string                 `json:"sourceId"`
+	Filters  []grid.Filter          `json:"filters,omitempty"`
 }
 
 type CountRowsResponse struct {
-	Count int64 `json:"count"`
+	Count *int64 `json:"count"`
 }
 
 type CellValueRequest struct {
-	SourceID string        `json:"sourceId"`
-	RowIndex int64         `json:"rowIndex"`
-	Column   string        `json:"column"`
-	Sorts    []grid.Sort   `json:"sorts,omitempty"`
-	Filters  []grid.Filter `json:"filters,omitempty"`
+	Resource models.GridResourceRef `json:"resource"`
+	SourceID string                 `json:"sourceId"`
+	RowIndex int64                  `json:"rowIndex"`
+	Column   string                 `json:"column"`
+	Sorts    []grid.Sort            `json:"sorts,omitempty"`
+	Filters  []grid.Filter          `json:"filters,omitempty"`
 }
 
 type CellValueResponse struct {
@@ -88,10 +92,11 @@ type SaveQueryRequest struct {
 }
 
 type ExportRequest struct {
-	SourceID       string        `json:"sourceId"`
-	Destination    string        `json:"destination,omitempty"`
-	Scope          string        `json:"scope"`
-	Filters        []grid.Filter `json:"filters,omitempty"`
-	Sorts          []grid.Sort   `json:"sorts,omitempty"`
-	VisibleColumns []string      `json:"visibleColumns,omitempty"`
+	Resource       models.GridResourceRef `json:"resource"`
+	SourceID       string                 `json:"sourceId"`
+	Destination    string                 `json:"destination,omitempty"`
+	Scope          string                 `json:"scope"`
+	Filters        []grid.Filter          `json:"filters,omitempty"`
+	Sorts          []grid.Sort            `json:"sorts,omitempty"`
+	VisibleColumns []string               `json:"visibleColumns,omitempty"`
 }

@@ -4,9 +4,9 @@ import { sql } from "@codemirror/lang-sql";
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { AlertTriangle, Clock3, Copy, FilePlus2, Play, Save } from "lucide-react";
-import type { SourceInfo } from "@/types";
+import type { ExternalRelationInfo, SourceInfo } from "@/types";
 import type { QueryHistoryEntry } from "@/stores/app-store";
-import { quoteIdentifier } from "@/lib/utils";
+import { sqlCompletionOptions } from "./completion";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ export type SQLPanelProps = {
   disabled?: boolean;
   disabledReason?: string;
   sources: SourceInfo[];
+  externalRelations?: ExternalRelationInfo[];
   history?: QueryHistoryEntry[];
   error?: string;
 };
@@ -40,22 +41,8 @@ const editorTheme = EditorView.theme({
   "&.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "rgba(50,230,126,.2)" },
 }, { dark: true });
 
-function completionSource(sources: SourceInfo[]) {
-  const options = sources.flatMap((source) => [
-    {
-      label: source.tableName,
-      apply: quoteIdentifier(source.tableName),
-      type: "class",
-      detail: source.displayName,
-      boost: 10,
-    },
-    ...source.columns.map((column) => ({
-      label: column.name,
-      apply: quoteIdentifier(column.name),
-      type: "property",
-      detail: `${source.tableName} · ${column.type}`,
-    })),
-  ]);
+function completionSource(sources: SourceInfo[], externalRelations: ExternalRelationInfo[]) {
+  const options = sqlCompletionOptions(sources, externalRelations);
   return (context: CompletionContext): CompletionResult | null => {
     const word = context.matchBefore(/[\w$]*/);
     if (!word || (word.from === word.to && !context.explicit)) return null;
@@ -73,14 +60,15 @@ export function SQLPanel({
   disabled = false,
   disabledReason,
   sources,
+  externalRelations = [],
   history = [],
   error,
 }: SQLPanelProps) {
   const extensions = useMemo(() => [
     sql({ upperCaseKeywords: true }),
-    autocompletion({ override: [completionSource(sources)] }),
+    autocompletion({ override: [completionSource(sources, externalRelations)] }),
     editorTheme,
-  ], [sources]);
+  ], [externalRelations, sources]);
 
   const onShortcut = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!(event.metaKey || event.ctrlKey)) return;
@@ -126,7 +114,7 @@ export function SQLPanel({
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="ml-auto text-[10px] text-muted-foreground">
-          {disabled ? disabledReason ?? "Wait for imports to finish" : `${sources.length} table${sources.length === 1 ? "" : "s"} available`}
+          {disabled ? disabledReason ?? "Wait for data to become available" : `${sources.length + externalRelations.length} relation${sources.length + externalRelations.length === 1 ? "" : "s"} available`}
         </div>
       </div>
 
@@ -163,4 +151,3 @@ export function SQLPanel({
 }
 
 export default SQLPanel;
-

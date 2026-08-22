@@ -2,6 +2,7 @@ package grid
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"math"
 	"regexp"
@@ -21,7 +22,10 @@ const (
 type Service struct {
 	db        *database.DB
 	workspace *workspace.Service
+	external  ExternalResolver
 }
+
+func (s *Service) SetExternalResolver(resolver ExternalResolver) { s.external = resolver }
 
 func New(db *database.DB, workspaces ...*workspace.Service) *Service {
 	var ws *workspace.Service
@@ -35,34 +39,52 @@ func New(db *database.DB, workspaces ...*workspace.Service) *Service {
 }
 
 func (s *Service) Rows(ctx context.Context, request RowsRequest) (RowsResponse, error) {
+	resource, err := normalizeResource(request.Resource, request.SourceID)
+	if err != nil {
+		return RowsResponse{}, err
+	}
 	limit := request.Limit
 	if limit == 0 {
 		limit = defaultLimit
 	}
 	built, err := s.BuildSelect(ctx, SelectRequest{
-		SourceID: request.SourceID, Columns: request.VisibleColumns,
+		Resource: resource, SourceID: request.SourceID, Columns: request.VisibleColumns,
 		Sorts: request.Sorts, Filters: request.Filters,
 		Offset: request.Offset, Limit: limit,
 	}, true)
 	if err != nil {
 		return RowsResponse{}, err
 	}
-	rows, err := s.db.SQL().QueryContext(ctx, built.SQL, built.Args...)
+	values, err := s.ExecuteSelect(ctx, built)
 	if err != nil {
-		return RowsResponse{}, models.WrapError(models.CodeDatabase, "Could not load source rows", err, map[string]any{"sourceId": request.SourceID})
+		code := models.CodeDatabase
+		message := "Could not load source rows"
+		details := map[string]any{"sourceId": resource.SourceID}
+		if resource.Kind == "external" {
+			code = models.CodeConnectionFailed
+			message = "The live relation could not be read. Reconnect its database and try again"
+			details = map[string]any{"relationId": resource.RelationID}
+		}
+		return RowsResponse{}, models.NewError(code, message, details)
 	}
-	values, err := database.ScanRows(rows)
-	if err != nil {
-		return RowsResponse{}, models.WrapError(models.CodeDatabase, "Could not read source rows", err, map[string]any{"sourceId": request.SourceID})
+	response := RowsResponse{Resource: resource, SourceID: resource.SourceID, Columns: built.Columns, Offset: request.Offset, Limit: limit, PagingStable: true}
+	if resource.Kind == "external" {
+		response.PagingStable = built.Relation.PagingStable
+		response.HasMore = len(values) > limit
+		if response.HasMore {
+			values = values[:limit]
+		}
+		response.Rows = values
+		return response, nil
 	}
-	total, err := s.CountRows(ctx, request.SourceID, request.Filters)
+	total, err := s.CountRows(ctx, resource.SourceID, request.Filters)
 	if err != nil {
 		return RowsResponse{}, err
 	}
-	return RowsResponse{
-		SourceID: request.SourceID, Columns: built.Columns, Rows: values,
-		Offset: request.Offset, Limit: limit, TotalRows: total,
-	}, nil
+	response.Rows = values
+	response.TotalRows = &total
+	response.HasMore = request.Offset+int64(len(values)) < total
+	return response, nil
 }
 
 // GetRows is an alias convenient for a Wails binding.
@@ -71,21 +93,37 @@ func (s *Service) GetRows(ctx context.Context, request RowsRequest) (RowsRespons
 }
 
 func (s *Service) CountRows(ctx context.Context, sourceID string, filters []Filter) (int64, error) {
-	source, columns, columnMap, err := s.resolve(ctx, sourceID, nil)
+	resolved, err := s.resolve(ctx, models.GridResourceRef{Kind: "source", SourceID: sourceID}, nil)
 	if err != nil {
 		return 0, err
 	}
-	_ = columns
-	where, args, err := buildWhere(filters, columnMap)
+	where, args, err := buildWhere(filters, resolved.columnMap)
 	if err != nil {
 		return 0, err
 	}
-	query := "SELECT COUNT(*) FROM " + database.QuoteQualified(source.Schema, source.SQLName) + " AS t" + where
+	query := "SELECT COUNT(*) FROM " + resolved.fromSQL + " AS t" + where
 	var count int64
 	if err := s.db.SQL().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, models.WrapError(models.CodeDatabase, "Could not count source rows", err, map[string]any{"sourceId": sourceID})
 	}
 	return count, nil
+}
+
+// CountResource keeps remote counts explicit: live relations report unknown
+// rather than issuing an expensive COUNT(*) behind the grid's back.
+func (s *Service) CountResource(ctx context.Context, resource models.GridResourceRef, filters []Filter) (*int64, error) {
+	resource, err := normalizeResource(resource, "")
+	if err != nil {
+		return nil, err
+	}
+	if resource.Kind == "external" {
+		return nil, nil
+	}
+	count, err := s.CountRows(ctx, resource.SourceID, filters)
+	if err != nil {
+		return nil, err
+	}
+	return &count, nil
 }
 
 // BuildSelect constructs a controlled SELECT reusable by CSV export.
@@ -98,68 +136,131 @@ func (s *Service) BuildSelect(ctx context.Context, request SelectRequest, pagina
 			return BuiltSelect{}, models.NewError(models.CodeInvalidArgument, "Row limit is outside the allowed range", map[string]any{"min": 1, "max": maxLimit})
 		}
 	}
-	source, selected, columnMap, err := s.resolve(ctx, request.SourceID, request.Columns)
+	resource, err := normalizeResource(request.Resource, request.SourceID)
 	if err != nil {
 		return BuiltSelect{}, err
 	}
-	where, args, err := buildWhere(request.Filters, columnMap)
+	resolved, err := s.resolve(ctx, resource, request.Columns)
 	if err != nil {
 		return BuiltSelect{}, err
 	}
-	selectColumns := make([]string, len(selected))
-	for i, column := range selected {
+	where, args, err := buildWhere(request.Filters, resolved.columnMap)
+	if err != nil {
+		return BuiltSelect{}, err
+	}
+	selectColumns := make([]string, len(resolved.selected))
+	for i, column := range resolved.selected {
 		selectColumns[i] = "t." + database.QuoteIdentifier(column.Name)
 	}
 	query := "SELECT " + strings.Join(selectColumns, ", ") + " FROM " +
-		database.QuoteQualified(source.Schema, source.SQLName) + " AS t" + where
-	order, err := buildOrder(request.Sorts, columnMap)
+		resolved.fromSQL + " AS t" + where
+	order, err := buildOrder(request.Sorts, resolved.columnMap, resolved.defaultOrder, resolved.useRowID)
 	if err != nil {
 		return BuiltSelect{}, err
 	}
 	query += order
 	if paginate {
-		query += " LIMIT ? OFFSET ?"
-		args = append(args, request.Limit, request.Offset)
+		fetchLimit := request.Limit
+		if resource.Kind == "external" {
+			fetchLimit++
+		}
+		// DuckDB 1.4.x can push a plain LIMIT into its PostgreSQL scanner, but
+		// not the ORDER BY + LIMIT pair used for deterministic grid paging. Run
+		// filter-free pages as a native PostgreSQL query so an indexed primary
+		// key can return the first block without DuckDB scanning and sorting the
+		// entire remote relation. Filtered pages retain the controlled generic
+		// path because their DuckDB casts are not all PostgreSQL-compatible.
+		if resolved.relation != nil && resolved.relation.Provider == "postgres" && len(request.Filters) == 0 {
+			remoteFrom := database.QuoteQualified(resolved.relation.Schema, resolved.relation.Name)
+			remoteSQL := "SELECT " + strings.Join(selectColumns, ", ") + " FROM " + remoteFrom + " AS t" + order +
+				" LIMIT " + strconv.Itoa(fetchLimit) + " OFFSET " + strconv.FormatInt(request.Offset, 10)
+			query = "SELECT * FROM postgres_query(?, ?)"
+			args = []any{resolved.relation.Catalog, remoteSQL}
+		} else {
+			query += " LIMIT ? OFFSET ?"
+			args = append(args, fetchLimit, request.Offset)
+		}
 	}
-	return BuiltSelect{SQL: query, Args: args, Source: source, Columns: selected}, nil
+	built := BuiltSelect{SQL: query, Args: args, Source: resolved.source, Resource: resource, Columns: resolved.selected}
+	if resolved.relation != nil {
+		relation := *resolved.relation
+		built.Relation = &relation
+	}
+	return built, nil
 }
 
-func (s *Service) resolve(ctx context.Context, sourceID string, requested []string) (models.SourceInfo, []models.ColumnInfo, map[string]models.ColumnInfo, error) {
-	source, err := s.workspace.GetSource(ctx, sourceID)
-	if err != nil {
-		return models.SourceInfo{}, nil, nil, err
+type resolvedRelation struct {
+	resource     models.GridResourceRef
+	fromSQL      string
+	source       models.SourceInfo
+	relation     *models.ExternalRelationInfo
+	selected     []models.ColumnInfo
+	columnMap    map[string]models.ColumnInfo
+	defaultOrder []string
+	useRowID     bool
+}
+
+func (s *Service) resolve(ctx context.Context, resource models.GridResourceRef, requested []string) (resolvedRelation, error) {
+	var resolved resolvedRelation
+	resolved.resource = resource
+	var columns []models.ColumnInfo
+	if resource.Kind == "source" {
+		source, err := s.workspace.GetSource(ctx, resource.SourceID)
+		if err != nil {
+			return resolvedRelation{}, err
+		}
+		if source.Schema != "data" && source.Schema != "result" {
+			return resolvedRelation{}, models.NewError(models.CodeInvalidArgument, "Source schema is not queryable", nil)
+		}
+		resolved.source = source
+		resolved.fromSQL = database.QuoteQualified(source.Schema, source.SQLName)
+		resolved.useRowID = true
+		columns = source.Columns
+	} else {
+		if s.external == nil {
+			return resolvedRelation{}, models.NewError(models.CodeConnectionNotConnected, "External database services are unavailable", nil)
+		}
+		relation, err := s.external.ResolveExternal(ctx, resource.RelationID)
+		if err != nil {
+			return resolvedRelation{}, err
+		}
+		resolved.relation = &relation
+		resolved.fromSQL = relation.QualifiedName
+		resolved.defaultOrder = append([]string(nil), relation.DefaultOrder...)
+		columns = relation.Columns
 	}
-	if source.Schema != "data" && source.Schema != "result" {
-		return models.SourceInfo{}, nil, nil, models.NewError(models.CodeInvalidArgument, "Source schema is not queryable", nil)
-	}
-	columnMap := make(map[string]models.ColumnInfo, len(source.Columns))
-	for _, column := range source.Columns {
+	columnMap := make(map[string]models.ColumnInfo, len(columns))
+	for _, column := range columns {
 		columnMap[column.Name] = column
 	}
-	if len(source.Columns) == 0 {
-		return models.SourceInfo{}, nil, nil, models.NewError(models.CodeInvalidArgument, "Source has no columns", map[string]any{"sourceId": sourceID})
+	if len(columns) == 0 {
+		return resolvedRelation{}, models.NewError(models.CodeInvalidArgument, "Relation has no columns", nil)
 	}
 	if len(requested) == 0 {
-		return source, append([]models.ColumnInfo(nil), source.Columns...), columnMap, nil
+		resolved.selected = append([]models.ColumnInfo(nil), columns...)
+		resolved.columnMap = columnMap
+		return resolved, nil
 	}
 	seen := make(map[string]bool, len(requested))
 	selected := make([]models.ColumnInfo, 0, len(requested))
 	for _, name := range requested {
 		column, ok := columnMap[name]
 		if !ok {
-			return models.SourceInfo{}, nil, nil, badColumn(name)
+			return resolvedRelation{}, badColumn(name)
 		}
 		if seen[name] {
-			return models.SourceInfo{}, nil, nil, models.NewError(models.CodeInvalidArgument, "Visible columns contain a duplicate", map[string]any{"column": name})
+			return resolvedRelation{}, models.NewError(models.CodeInvalidArgument, "Visible columns contain a duplicate", map[string]any{"column": name})
 		}
 		seen[name] = true
 		selected = append(selected, column)
 	}
-	return source, selected, columnMap, nil
+	resolved.selected = selected
+	resolved.columnMap = columnMap
+	return resolved, nil
 }
 
-func buildOrder(sorts []Sort, columns map[string]models.ColumnInfo) (string, error) {
-	parts := make([]string, 0, len(sorts)+1)
+func buildOrder(sorts []Sort, columns map[string]models.ColumnInfo, defaultOrder []string, useRowID bool) (string, error) {
+	parts := make([]string, 0, len(sorts)+len(defaultOrder)+1)
 	seen := make(map[string]bool, len(sorts))
 	for _, sortSpec := range sorts {
 		if _, ok := columns[sortSpec.Column]; !ok {
@@ -178,10 +279,80 @@ func buildOrder(sorts []Sort, columns map[string]models.ColumnInfo) (string, err
 		}
 		parts = append(parts, "t."+database.QuoteIdentifier(sortSpec.Column)+" "+direction+" NULLS LAST")
 	}
-	// Physical rowid is never selected. It gives deterministic pages and breaks
-	// ties for every user sort.
-	parts = append(parts, "t.rowid ASC")
+	for _, name := range defaultOrder {
+		if seen[name] {
+			continue
+		}
+		if _, ok := columns[name]; !ok {
+			continue
+		}
+		seen[name] = true
+		parts = append(parts, "t."+database.QuoteIdentifier(name)+" ASC NULLS LAST")
+	}
+	if useRowID {
+		parts = append(parts, "t.rowid ASC")
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
 	return " ORDER BY " + strings.Join(parts, ", "), nil
+}
+
+func normalizeResource(resource models.GridResourceRef, legacySourceID string) (models.GridResourceRef, error) {
+	if resource.Kind == "" && legacySourceID != "" {
+		resource = models.GridResourceRef{Kind: "source", SourceID: legacySourceID}
+	}
+	if resource.Kind == "source" && resource.SourceID != "" && resource.RelationID == "" {
+		return resource, nil
+	}
+	if resource.Kind == "external" && resource.RelationID != "" && resource.SourceID == "" {
+		return resource, nil
+	}
+	return models.GridResourceRef{}, models.NewError(models.CodeInvalidArgument, "Grid resource reference is invalid", nil)
+}
+
+// ExecuteSelect consumes rows while the federated session lock is held for a
+// live relation. Local datasets continue to use the regular pool.
+func (s *Service) ExecuteSelect(ctx context.Context, built BuiltSelect) ([]map[string]any, error) {
+	if built.Resource.Kind != "external" {
+		rows, err := s.db.SQL().QueryContext(ctx, built.SQL, built.Args...)
+		if err != nil {
+			return nil, err
+		}
+		return database.ScanRows(rows)
+	}
+	if s.external == nil {
+		return nil, models.NewError(models.CodeConnectionNotConnected, "External database services are unavailable", nil)
+	}
+	var values []map[string]any
+	err := s.external.WithFederatedConn(ctx, func(conn *sql.Conn) error {
+		rows, queryErr := conn.QueryContext(ctx, built.SQL, built.Args...)
+		if queryErr != nil {
+			return queryErr
+		}
+		values, queryErr = database.ScanRows(rows)
+		return queryErr
+	})
+	return values, err
+}
+
+func (s *Service) WithResourceConn(ctx context.Context, resource models.GridResourceRef, fn func(*sql.Conn) error) error {
+	resource, err := normalizeResource(resource, "")
+	if err != nil {
+		return err
+	}
+	if resource.Kind == "external" {
+		if s.external == nil {
+			return models.NewError(models.CodeConnectionNotConnected, "External database services are unavailable", nil)
+		}
+		return s.external.WithFederatedConn(ctx, fn)
+	}
+	conn, err := s.db.SQL().Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return fn(conn)
 }
 
 func buildWhere(filters []Filter, columns map[string]models.ColumnInfo) (string, []any, error) {

@@ -35,7 +35,7 @@ describe("import presentation", () => {
     const { rerender } = render(<EmptyState onChoose={onChoose} />);
     expect(screen.getByText("Drop a data file anywhere")).toBeInTheDocument();
     expect(screen.getByText("CSV, TSV, JSON, JSONL or XLSX — processed locally")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Choose files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open data file" }));
     expect(onChoose).toHaveBeenCalledOnce();
 
     rerender(<EmptyState onChoose={onChoose} dragActive />);

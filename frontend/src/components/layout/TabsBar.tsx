@@ -1,4 +1,4 @@
-import { Table2, TerminalSquare, X } from "lucide-react";
+import { DatabaseZap, Table2, TerminalSquare, X } from "lucide-react";
 import type { AppTab } from "@/stores/app-store";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -36,7 +36,7 @@ export function TabsBar({ tabs, activeTabId, onSelect, onClose }: TabsBarProps) 
         {tabs.length === 0 && <span className="flex items-center px-3 text-[10px] text-muted-foreground">No open tables</span>}
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
-          const Icon = tab.kind === "result" ? TerminalSquare : Table2;
+          const Icon = tab.kind === "result" ? TerminalSquare : tab.kind === "external" ? DatabaseZap : Table2;
           return (
             <div
               key={tab.id}

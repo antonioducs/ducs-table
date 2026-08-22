@@ -1,10 +1,13 @@
 import type {
   BootstrapState,
   CellValueResult,
+  ConnectionInfo,
+  ConnectionInput,
   CountRowsRequest,
   CountRowsResult,
   ExportRequest,
   ExportResult,
+  ExternalRelationInfo,
   GetCellValueRequest,
   ImportPathsRequest,
   ImportPathsResult,
@@ -18,6 +21,8 @@ import type {
   SaveQueryRequest,
   SaveResultAsTableRequest,
   SourceInfo,
+  TestConnectionInput,
+  UpdateConnectionInput,
   WorkbookSheets,
   XLSXImportRequest,
 } from "@/types";
@@ -44,12 +49,29 @@ declare global {
           RemoveDataset(sourceId: string): Promise<void>;
           ExportCSV(request: ExportRequest): Promise<ExportResult>;
           CancelJob(jobId: string): Promise<Job>;
+          ListConnections(): Promise<ConnectionInfo[]>;
+          CreateConnection(request: ConnectionInput): Promise<ConnectionInfo>;
+          UpdateConnection(request: UpdateConnectionInput): Promise<ConnectionInfo>;
+          DeleteConnection(id: string): Promise<void>;
+          TestConnection(request: TestConnectionInput): Promise<void>;
+          ConnectConnection(request: { id: string }): Promise<ConnectionInfo>;
+          DisconnectConnection(id: string): Promise<void>;
+          RefreshConnectionCatalog(id: string): Promise<void>;
+          ListConnectionSchemas(id: string): Promise<{ name: string }[]>;
+          ListExternalRelations(request: { connectionId: string; schema: string }): Promise<ExternalRelationInfo[]>;
+          GetExternalRelation(id: string): Promise<ExternalRelationInfo>;
+          SnapshotExternalRelation(request: { relationId: string; displayName?: string; sqlName?: string }): Promise<Job>;
+          RefreshSnapshot(request: { sourceId: string }): Promise<Job>;
         };
       };
     };
     runtime?: {
       EventsOn?(eventName: string, callback: (payload: unknown) => void): (() => void) | void;
       EventsOff?(eventName: string): void;
+    };
+    wails?: {
+      Callback?(message: string): void;
+      errorNormalizerInstalled?: boolean;
     };
   }
 }

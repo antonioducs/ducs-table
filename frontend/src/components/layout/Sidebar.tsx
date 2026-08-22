@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bookmark, Copy, Database, FileCode2, MoreHorizontal, Play, Table2, Trash2 } from "lucide-react";
+import { Bookmark, Copy, Database, DatabaseZap, FileCode2, MoreHorizontal, Play, RefreshCw, Table2, Trash2 } from "lucide-react";
 import type { SavedQuery, SourceInfo, SourceStatus } from "@/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ConnectionTree, type ConnectionTreeProps } from "@/components/connections/ConnectionTree";
 
 export interface SidebarProps {
   sources: readonly SourceInfo[];
@@ -24,6 +25,8 @@ export interface SidebarProps {
   onSelectSavedQuery: (query: SavedQuery) => void;
   onDeleteSavedQuery: (query: SavedQuery) => void;
   onRemoveSource: (source: SourceInfo) => void;
+  onRefreshSnapshot?: (source: SourceInfo) => void;
+  connectionTree?: ConnectionTreeProps;
 }
 
 const statusDetails: Record<SourceStatus, { label: string; variant: "default" | "muted" | "warning" | "destructive" }> = {
@@ -60,9 +63,10 @@ interface SourceRowProps {
   onInsertTable: SidebarProps["onInsertTable"];
   onCopyTable?: SidebarProps["onCopyTable"];
   onRemoveSource: SidebarProps["onRemoveSource"];
+  onRefreshSnapshot?: SidebarProps["onRefreshSnapshot"];
 }
 
-function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable, onRemoveSource }: SourceRowProps) {
+function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable, onRemoveSource, onRefreshSnapshot }: SourceRowProps) {
   const status = statusDetails[source.status];
   return (
     <div className={cn("group mx-1 flex min-w-0 items-center rounded-md border border-transparent", active ? "border-primary/20 bg-primary/10" : "hover:bg-accent")}>
@@ -75,6 +79,7 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
         <span className="flex min-w-0 items-center gap-1.5">
           <Table2 className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-[11px] text-foreground" title={source.displayName}>{source.displayName}</span>
+          {source.snapshot && <Badge variant="muted" className="h-4 shrink-0 px-1.5 text-[8px] uppercase leading-none" title={`${source.snapshot.catalog}.${source.snapshot.schema}.${source.snapshot.relation} · refreshed ${new Date(source.snapshot.refreshedAt).toLocaleString()}`}>Snapshot</Badge>}
           <Badge variant={status.variant} className="h-4 shrink-0 px-1.5 text-[8px] uppercase leading-none">{status.label}</Badge>
         </span>
         <code className="mt-0.5 block truncate pl-5 text-[9px] text-muted-foreground" title={source.tableName}>{source.tableName}</code>
@@ -110,6 +115,7 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
           <DropdownMenuItem disabled={!onCopyTable} onSelect={() => onCopyTable?.(source)}><Copy aria-hidden="true" /> Copy table name</DropdownMenuItem>
           {!source.isEphemeral && (
             <>
+              {source.snapshot && <DropdownMenuItem disabled={!source.snapshot.connectionId} onSelect={() => onRefreshSnapshot?.(source)}><RefreshCw aria-hidden="true" /> Refresh snapshot</DropdownMenuItem>}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onRemoveSource(source)}><Trash2 aria-hidden="true" /> Remove table</DropdownMenuItem>
             </>
@@ -128,6 +134,7 @@ export function Sidebar(props: SidebarProps) {
     onInsertTable: props.onInsertTable,
     onCopyTable: props.onCopyTable,
     onRemoveSource: props.onRemoveSource,
+    onRefreshSnapshot: props.onRefreshSnapshot,
   };
 
   return (
@@ -140,6 +147,9 @@ export function Sidebar(props: SidebarProps) {
         <ScrollArea className="min-h-0 flex-1">
           <SidebarSection title="Tables" icon={<Database className="size-3" aria-hidden="true" />} empty="Open a data file to begin">
             {tables.map((source) => <SourceRow key={source.id} source={source} active={source.id === props.activeSourceId} {...rowCallbacks} />)}
+          </SidebarSection>
+          <SidebarSection title="Connections" icon={<DatabaseZap className="size-3" aria-hidden="true" />} empty="Connect a database to browse live data">
+            {props.connectionTree ? <ConnectionTree {...props.connectionTree} /> : null}
           </SidebarSection>
           <SidebarSection title="Results" icon={<Table2 className="size-3" aria-hidden="true" />} empty="Run SQL to create a result">
             {results.map((source) => <SourceRow key={source.id} source={source} active={source.id === props.activeSourceId} {...rowCallbacks} />)}

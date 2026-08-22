@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "./app-store";
-import type { Job, SourceInfo } from "@/types";
+import type { ConnectionInfo, ExternalRelationInfo, Job, SourceInfo } from "@/types";
 
 const source: SourceInfo = {
   id: "customers-id",
@@ -19,6 +19,17 @@ const job: Job = {
   state: "running",
   stage: "Materializing",
   createdAt: "2026-08-20T12:00:00Z",
+};
+
+const connection: ConnectionInfo = {
+  id: "connection-id", name: "Production", kind: "postgres", catalogName: "prod", autoConnect: false, hasSecret: true,
+  status: "connected", createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z",
+  config: { postgres: { host: "db.internal", port: 5432, database: "app", username: "reader", sslMode: "require", connectTimeoutSeconds: 10, poolSize: 4 } },
+};
+
+const relation: ExternalRelationInfo = {
+  id: "relation-id", connectionId: connection.id, provider: "postgres", catalog: "prod", schema: "public", name: "profiles", relationType: "table",
+  qualifiedName: '"prod"."public"."profiles"', columns: [{ name: "id", type: "INTEGER", nullable: false, ordinal: 1 }], defaultOrder: ["id"], pagingStable: true,
 };
 
 describe("app store", () => {
@@ -54,5 +65,23 @@ describe("app store", () => {
     expect(useAppStore.getState().sources[0].status).toBe("ready");
     expect(useAppStore.getState().sources[0].previewRows).toBeUndefined();
   });
-});
 
+  it("keeps live relation tabs separate from local source tabs", () => {
+    const state = useAppStore.getState();
+    state.upsertSource(source); state.openTab(source.id); state.upsertConnection(connection); state.openExternalTab(relation);
+    expect(useAppStore.getState().tabs.map((tab) => tab.kind)).toEqual(["dataset", "external"]);
+    expect(useAppStore.getState().activeTabId).toBe(`external:${relation.id}`);
+    useAppStore.getState().closeTab(`external:${relation.id}`);
+    expect(useAppStore.getState().sources).toEqual([source]);
+  });
+
+  it("persists only lightweight preferences, never connections or credentials", () => {
+    useAppStore.getState().upsertConnection(connection);
+    useAppStore.getState().setPanel({ sqlCollapsed: true });
+    const persisted = localStorage.getItem("ducs-table:preferences:v1") ?? "";
+    expect(persisted).toContain("preferences");
+    expect(persisted).not.toContain("db.internal");
+    expect(persisted).not.toContain("Production");
+    expect(persisted.toLowerCase()).not.toContain("password");
+  });
+});

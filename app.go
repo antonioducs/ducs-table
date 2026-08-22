@@ -8,8 +8,12 @@ import (
 	"time"
 
 	"ducs-table/internal/apppaths"
+	"ducs-table/internal/connections"
+	"ducs-table/internal/credentials"
 	"ducs-table/internal/database"
 	exportservice "ducs-table/internal/export"
+	"ducs-table/internal/extensions"
+	"ducs-table/internal/federation"
 	"ducs-table/internal/grid"
 	"ducs-table/internal/importers"
 	"ducs-table/internal/jobs"
@@ -23,17 +27,21 @@ import (
 // App is the deliberately small Wails surface. The frontend receives metadata
 // and row blocks only; file parsing, SQL, and exports stay in Go/DuckDB.
 type App struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	db         *database.DB
-	workspace  *workspace.Service
-	imports    *importers.Service
-	grid       *grid.Service
-	queries    *query.Service
-	exports    *exportservice.Service
-	jobs       *jobs.Manager
-	startupErr error
-	closeOnce  sync.Once
+	ctx             context.Context
+	cancel          context.CancelFunc
+	db              *database.DB
+	workspace       *workspace.Service
+	imports         *importers.Service
+	grid            *grid.Service
+	queries         *query.Service
+	exports         *exportservice.Service
+	jobs            *jobs.Manager
+	extensions      *extensions.Manager
+	federated       *federation.Session
+	connections     *connections.Service
+	startupErr      error
+	closeOnce       sync.Once
+	autoConnectOnce sync.Once
 }
 
 func NewApp() *App { return &App{} }
@@ -51,14 +59,26 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.db = db
-	a.workspace = workspace.New(db)
-	a.imports = importers.New(db)
-	a.grid = grid.New(db, a.workspace)
-	a.queries = query.New(db)
-	a.exports = exportservice.New(db, a.grid)
 	a.jobs = jobs.NewManagerWithContext(a.ctx, 2, func(snapshot jobs.Snapshot) {
 		a.emit("ducs:job-updated", snapshot)
 	})
+	a.extensions = extensions.NewManager()
+	federated, err := federation.New(a.ctx, db)
+	if err != nil {
+		a.startupErr = err
+		_ = db.Close()
+		return
+	}
+	a.federated = federated
+	a.workspace = workspace.New(db)
+	a.connections = connections.NewService(db, federated, credentials.New(), a.extensions, a.workspace, func(info connections.ConnectionInfo) {
+		a.emit("ducs:connection-updated", info)
+	})
+	a.imports = importers.New(db, a.extensions)
+	a.grid = grid.New(db, a.workspace)
+	a.grid.SetExternalResolver(a.connections)
+	a.queries = query.New(db, federated)
+	a.exports = exportservice.New(db, a.grid)
 	runtime.OnFileDrop(a.ctx, func(_, _ int, paths []string) {
 		if len(paths) > 0 {
 			a.emit("ducs:file-drop", map[string]any{"paths": paths})
@@ -78,6 +98,9 @@ func (a *App) shutdown(context.Context) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			_ = a.jobs.Shutdown(ctx)
 			cancel()
+		}
+		if a.connections != nil {
+			_ = a.connections.Shutdown()
 		}
 		if a.db != nil {
 			_ = a.db.Close()
@@ -113,10 +136,39 @@ func (a *App) Bootstrap() (BootstrapState, error) {
 	if err != nil {
 		return BootstrapState{}, err
 	}
-	return BootstrapState{
+	connectionList, err := a.connections.ListConnections(a.ctx)
+	if err != nil {
+		return BootstrapState{}, err
+	}
+	result := BootstrapState{
 		Datasets: state.Datasets, Results: state.Results, SavedQueries: state.SavedQueries,
-		Jobs: a.jobs.List(), Ready: true,
-	}, nil
+		Jobs: a.jobs.List(), Connections: connectionList, Ready: true,
+	}
+	a.autoConnectOnce.Do(func() {
+		items := append([]connections.ConnectionInfo(nil), connectionList...)
+		go func() {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+			for _, info := range items {
+				if !info.AutoConnect {
+					continue
+				}
+				connectionID := info.ID
+				_, _ = a.jobs.SubmitWithMetadata("connection", "Connect "+info.Name, "", func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+					reporter.Update(0, "Connecting external database…")
+					connected, connectErr := a.connections.Connect(ctx, connectionID)
+					if connectErr == nil {
+						reporter.Update(1, "Connected")
+					}
+					return connected, connectErr
+				})
+			}
+		}()
+	})
+	return result, nil
 }
 
 func (a *App) OpenFiles() (ImportPathsResult, error) {
@@ -323,17 +375,13 @@ func (a *App) GetCellValue(request CellValueRequest) (CellValueResponse, error) 
 		return CellValueResponse{}, models.NewError(models.CodeInvalidArgument, "Row index cannot be negative", nil)
 	}
 	built, err := a.grid.BuildSelect(a.ctx, grid.SelectRequest{
-		SourceID: request.SourceID, Columns: []string{request.Column}, Sorts: request.Sorts,
+		Resource: request.Resource, SourceID: request.SourceID, Columns: []string{request.Column}, Sorts: request.Sorts,
 		Filters: request.Filters, Offset: request.RowIndex, Limit: 1,
 	}, true)
 	if err != nil {
 		return CellValueResponse{}, err
 	}
-	rows, err := a.db.SQL().QueryContext(a.ctx, built.SQL, built.Args...)
-	if err != nil {
-		return CellValueResponse{}, models.WrapError(models.CodeDatabase, "Could not load the full cell value", err, nil)
-	}
-	values, err := database.ScanRows(rows)
+	values, err := a.grid.ExecuteSelect(a.ctx, built)
 	if err != nil {
 		return CellValueResponse{}, err
 	}
@@ -347,7 +395,11 @@ func (a *App) CountRows(request CountRowsRequest) (CountRowsResponse, error) {
 	if err := a.ready(); err != nil {
 		return CountRowsResponse{}, err
 	}
-	count, err := a.grid.CountRows(a.ctx, request.SourceID, request.Filters)
+	resource := request.Resource
+	if resource.Kind == "" {
+		resource = models.GridResourceRef{Kind: "source", SourceID: request.SourceID}
+	}
+	count, err := a.grid.CountResource(a.ctx, resource, request.Filters)
 	return CountRowsResponse{Count: count}, err
 }
 
@@ -419,33 +471,63 @@ func (a *App) ExportCSV(request ExportRequest) (exportservice.Result, error) {
 	if err := a.ready(); err != nil {
 		return exportservice.Result{}, err
 	}
+	resource := request.Resource
+	if resource.Kind == "" {
+		resource = models.GridResourceRef{Kind: "source", SourceID: request.SourceID}
+	}
 	destination := strings.TrimSpace(request.Destination)
+	var exportName, exportID string
 	if destination == "" {
-		source, err := a.workspace.GetSource(a.ctx, request.SourceID)
-		if err != nil {
-			return exportservice.Result{}, err
+		if resource.Kind == "external" {
+			relation, relationErr := a.connections.GetExternalRelation(a.ctx, resource.RelationID)
+			if relationErr != nil {
+				return exportservice.Result{}, relationErr
+			}
+			exportName = relation.Name
+			exportID = relation.ID
+		} else {
+			source, sourceErr := a.workspace.GetSource(a.ctx, resource.SourceID)
+			if sourceErr != nil {
+				return exportservice.Result{}, sourceErr
+			}
+			exportName = source.DisplayName
+			exportID = source.ID
 		}
-		filename := safeFilename(source.DisplayName) + ".csv"
-		destination, err = runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		filename := safeFilename(exportName) + ".csv"
+		var pickerErr error
+		destination, pickerErr = runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
 			Title: "Export CSV", DefaultFilename: filename,
 			Filters:              []runtime.FileFilter{{DisplayName: "CSV file (*.csv)", Pattern: "*.csv"}},
 			CanCreateDirectories: true,
 		})
-		if err != nil {
-			return exportservice.Result{}, models.WrapError(models.CodeIO, "The export destination could not be selected", err, nil)
+		if pickerErr != nil {
+			return exportservice.Result{}, models.WrapError(models.CodeIO, "The export destination could not be selected", pickerErr, nil)
 		}
 		if destination == "" {
 			return exportservice.Result{}, models.NewError(models.CodeCancelled, "Export was cancelled", nil)
 		}
 	}
-	source, err := a.workspace.GetSource(a.ctx, request.SourceID)
-	if err != nil {
-		return exportservice.Result{}, err
+	if exportName == "" {
+		if resource.Kind == "external" {
+			relation, relationErr := a.connections.GetExternalRelation(a.ctx, resource.RelationID)
+			if relationErr != nil {
+				return exportservice.Result{}, relationErr
+			}
+			exportName = relation.Name
+			exportID = relation.ID
+		} else {
+			source, sourceErr := a.workspace.GetSource(a.ctx, resource.SourceID)
+			if sourceErr != nil {
+				return exportservice.Result{}, sourceErr
+			}
+			exportName = source.DisplayName
+			exportID = source.ID
+		}
 	}
-	job, err := a.jobs.SubmitWithMetadata("export", source.DisplayName, source.ID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+	job, err := a.jobs.SubmitWithMetadata("export", exportName, exportID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Exporting CSV with DuckDB…")
 		return a.exports.ExportCSV(ctx, exportservice.CSVRequest{
-			SourceID: request.SourceID, Destination: destination, Scope: exportservice.Scope(request.Scope),
+			Resource: resource, SourceID: request.SourceID, Destination: destination, Scope: exportservice.Scope(request.Scope),
 			Filters: request.Filters, Sorts: request.Sorts, VisibleColumns: request.VisibleColumns,
 		})
 	})
@@ -480,6 +562,123 @@ func safeFilename(name string) string {
 		return "ducs-table-export"
 	}
 	return name
+}
+
+func (a *App) ListConnections() ([]connections.ConnectionInfo, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.connections.ListConnections(a.ctx)
+}
+
+func (a *App) CreateConnection(request connections.CreateConnectionRequest) (connections.ConnectionInfo, error) {
+	if err := a.ready(); err != nil {
+		return connections.ConnectionInfo{}, err
+	}
+	return a.connections.CreateConnection(a.ctx, request)
+}
+
+func (a *App) UpdateConnection(request connections.UpdateConnectionRequest) (connections.ConnectionInfo, error) {
+	if err := a.ready(); err != nil {
+		return connections.ConnectionInfo{}, err
+	}
+	return a.connections.UpdateConnection(a.ctx, request)
+}
+
+func (a *App) DeleteConnection(id string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.connections.DeleteConnection(a.ctx, id)
+}
+
+func (a *App) TestConnection(request connections.TestConnectionRequest) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.connections.TestConnection(a.ctx, request)
+}
+
+func (a *App) ConnectConnection(request connections.ConnectRequest) (connections.ConnectionInfo, error) {
+	if err := a.ready(); err != nil {
+		return connections.ConnectionInfo{}, err
+	}
+	return a.connections.Connect(a.ctx, request.ID)
+}
+
+func (a *App) DisconnectConnection(id string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.connections.Disconnect(a.ctx, id)
+}
+
+func (a *App) RefreshConnectionCatalog(id string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	if err := a.connections.RefreshCatalog(a.ctx, id); err != nil {
+		return err
+	}
+	a.emit("ducs:catalog-invalidated", map[string]any{"connectionId": id})
+	return nil
+}
+
+func (a *App) ListConnectionSchemas(id string) ([]connections.SchemaInfo, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.connections.ListSchemas(a.ctx, id)
+}
+
+func (a *App) ListExternalRelations(request connections.ListRelationsRequest) ([]models.ExternalRelationInfo, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.connections.ListRelations(a.ctx, request)
+}
+
+func (a *App) GetExternalRelation(id string) (models.ExternalRelationInfo, error) {
+	if err := a.ready(); err != nil {
+		return models.ExternalRelationInfo{}, err
+	}
+	return a.connections.GetExternalRelation(a.ctx, id)
+}
+
+func (a *App) SnapshotExternalRelation(request connections.SnapshotRequest) (jobs.Snapshot, error) {
+	if err := a.ready(); err != nil {
+		return jobs.Snapshot{}, err
+	}
+	job, err := a.jobs.SubmitWithMetadata("snapshot", "Snapshot external relation", request.RelationID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+		reporter.Update(0, "Copying the live relation locally…")
+		source, snapshotErr := a.connections.CreateSnapshot(ctx, request)
+		if snapshotErr != nil {
+			a.emit("ducs:snapshot-failed", map[string]any{"relationId": request.RelationID, "error": models.AsAppError(snapshotErr)})
+			return nil, snapshotErr
+		}
+		reporter.Update(1, "Snapshot ready")
+		a.emit("ducs:snapshot-ready", source)
+		return source, nil
+	})
+	return job, err
+}
+
+func (a *App) RefreshSnapshot(request connections.RefreshSnapshotRequest) (jobs.Snapshot, error) {
+	if err := a.ready(); err != nil {
+		return jobs.Snapshot{}, err
+	}
+	job, err := a.jobs.SubmitWithMetadata("snapshot-refresh", "Refresh snapshot", request.SourceID, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
+		reporter.Update(0, "Refreshing snapshot while keeping the current version available…")
+		source, refreshErr := a.connections.RefreshSnapshot(ctx, request.SourceID)
+		if refreshErr != nil {
+			a.emit("ducs:snapshot-failed", map[string]any{"sourceId": request.SourceID, "error": models.AsAppError(refreshErr)})
+			return nil, refreshErr
+		}
+		reporter.Update(1, "Snapshot refreshed")
+		a.emit("ducs:snapshot-ready", source)
+		return source, nil
+	})
+	return job, err
 }
 
 func (a *App) CancelJob(id string) (jobs.Snapshot, error) {

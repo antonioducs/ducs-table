@@ -3,6 +3,7 @@ package exports
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,12 +23,13 @@ const (
 )
 
 type CSVRequest struct {
-	SourceID       string        `json:"sourceId"`
-	Destination    string        `json:"destination"`
-	Scope          Scope         `json:"scope"`
-	Filters        []grid.Filter `json:"filters,omitempty"`
-	Sorts          []grid.Sort   `json:"sorts,omitempty"`
-	VisibleColumns []string      `json:"visibleColumns,omitempty"`
+	Resource       models.GridResourceRef `json:"resource"`
+	SourceID       string                 `json:"sourceId"`
+	Destination    string                 `json:"destination"`
+	Scope          Scope                  `json:"scope"`
+	Filters        []grid.Filter          `json:"filters,omitempty"`
+	Sorts          []grid.Sort            `json:"sorts,omitempty"`
+	VisibleColumns []string               `json:"visibleColumns,omitempty"`
 }
 
 type Result struct {
@@ -87,7 +89,11 @@ func (s *Service) ExportCSV(ctx context.Context, request CSVRequest) (Result, er
 	if scope == "" {
 		scope = ScopeEntire
 	}
-	selectRequest := grid.SelectRequest{SourceID: request.SourceID}
+	resource := request.Resource
+	if resource.Kind == "" && request.SourceID != "" {
+		resource = models.GridResourceRef{Kind: "source", SourceID: request.SourceID}
+	}
+	selectRequest := grid.SelectRequest{Resource: resource, SourceID: request.SourceID}
 	switch scope {
 	case ScopeEntire:
 		// Intentionally leave view controls empty.
@@ -103,7 +109,11 @@ func (s *Service) ExportCSV(ctx context.Context, request CSVRequest) (Result, er
 		return Result{}, err
 	}
 	copySQL := "COPY (" + built.SQL + ") TO " + database.QuotePathLiteral(absDestination) + " (FORMAT CSV, HEADER TRUE)"
-	if _, err := s.db.SQL().ExecContext(ctx, copySQL, built.Args...); err != nil {
+	err = s.grid.WithResourceConn(ctx, resource, func(conn *sql.Conn) error {
+		_, execErr := conn.ExecContext(ctx, copySQL, built.Args...)
+		return execErr
+	})
+	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return Result{}, models.WrapError(models.CodeCancelled, "CSV export was cancelled", context.Canceled, nil)
 		}

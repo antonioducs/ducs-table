@@ -32,6 +32,26 @@ var migrationStatements = []string{
 		created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
+	`CREATE TABLE IF NOT EXISTS ducs_meta.connections (
+		id VARCHAR PRIMARY KEY,
+		name VARCHAR NOT NULL,
+		kind VARCHAR NOT NULL CHECK (kind IN ('postgres', 'mongo')),
+		catalog_name VARCHAR NOT NULL UNIQUE,
+		config_json VARCHAR NOT NULL,
+		auto_connect BOOLEAN NOT NULL DEFAULT FALSE,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE TABLE IF NOT EXISTS ducs_meta.snapshots (
+		source_id VARCHAR PRIMARY KEY,
+		connection_id VARCHAR,
+		connection_name VARCHAR NOT NULL,
+		catalog_name VARCHAR NOT NULL,
+		schema_name VARCHAR NOT NULL,
+		relation_name VARCHAR NOT NULL,
+		relation_type VARCHAR NOT NULL,
+		refreshed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
 }
 
 // Migrate applies the schema definition transactionally and is safe to run

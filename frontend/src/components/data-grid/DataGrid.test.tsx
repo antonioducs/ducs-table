@@ -15,10 +15,14 @@ vi.mock("ag-grid-react", () => ({
     rowData,
     rowModelType,
     columnDefs,
+    cacheBlockSize,
+    loading,
   }: {
     rowData?: DataRow[];
     rowModelType?: string;
     columnDefs?: ColDef<DataRow>[];
+    cacheBlockSize?: number;
+    loading?: boolean;
   }) => (
     <div
       role="grid"
@@ -26,6 +30,8 @@ vi.mock("ag-grid-react", () => ({
       data-row-model={rowModelType}
       data-sort-disabled={String(columnDefs?.every((column) => column.sortable === false))}
       data-filter-disabled={String(columnDefs?.every((column) => column.filter === false))}
+      data-cache-block-size={cacheBlockSize}
+      data-loading={String(loading)}
     />
   ),
 }));
@@ -107,5 +113,15 @@ describe("DataGrid", () => {
     expect(grid).toHaveAttribute("data-row-model", "clientSide");
     expect(grid).toHaveAttribute("data-sort-disabled", "true");
     expect(grid).toHaveAttribute("data-filter-disabled", "true");
+  });
+
+  it("shows unknown totals and unstable paging for live relations", () => {
+    render(<DataGrid source={source({ id:"relation",status:"ready",previewRows:undefined,rowCount:null })} resource={{kind:"external",relationId:"relation"}} pagingStable={false} />);
+    expect(screen.getByText("Total unknown")).toBeInTheDocument();
+    expect(screen.getByText(/No stable key was detected/)).toBeInTheDocument();
+    expect(screen.getByText(/Loading first 100 rows from the remote database/)).toBeInTheDocument();
+    expect(screen.getByRole("grid")).toHaveAttribute("data-row-model","infinite");
+    expect(screen.getByRole("grid")).toHaveAttribute("data-cache-block-size","100");
+    expect(screen.getByRole("grid")).toHaveAttribute("data-loading","true");
   });
 });

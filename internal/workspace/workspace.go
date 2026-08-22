@@ -83,6 +83,11 @@ func (s *Service) listSources(ctx context.Context, schema string) ([]models.Sour
 			return nil, models.WrapError(models.CodeDatabase, "Could not inspect source columns", err, map[string]any{"sourceId": sources[i].ID})
 		}
 		sources[i].Columns = columns
+		origin, err := getSnapshotOrigin(ctx, s.db.SQL(), sources[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		sources[i].Snapshot = origin
 	}
 	return sources, nil
 }
@@ -96,6 +101,11 @@ func (s *Service) GetSource(ctx context.Context, id string) (models.SourceInfo, 
 	if err != nil {
 		return models.SourceInfo{}, err
 	}
+	origin, err := getSnapshotOrigin(ctx, s.db.SQL(), source.ID)
+	if err != nil {
+		return models.SourceInfo{}, err
+	}
+	source.Snapshot = origin
 	return source, nil
 }
 
@@ -119,6 +129,9 @@ func (s *Service) RemoveDataset(ctx context.Context, id string) error {
 		if _, err := tx.ExecContext(ctx, "DROP TABLE "+database.QuoteQualified(source.Schema, source.SQLName)); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM ducs_meta.snapshots WHERE source_id = ?`, id); err != nil {
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM ducs_meta.datasets WHERE id = ?`, id)
 		return err
 	})
@@ -130,6 +143,25 @@ func (s *Service) RemoveDataset(ctx context.Context, id string) error {
 		return models.WrapError(models.CodeDatabase, "Could not remove dataset", err, map[string]any{"sourceId": id})
 	}
 	return nil
+}
+
+func getSnapshotOrigin(ctx context.Context, q database.Queryer, sourceID string) (*models.SnapshotOrigin, error) {
+	var origin models.SnapshotOrigin
+	var connectionID sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT connection_id, connection_name, catalog_name, schema_name, relation_name, relation_type, refreshed_at FROM ducs_meta.snapshots WHERE source_id = ?`, sourceID).Scan(
+		&connectionID, &origin.ConnectionName, &origin.Catalog, &origin.Schema, &origin.Relation, &origin.RelationType, &origin.RefreshedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, models.NewError(models.CodeDatabase, "Could not read snapshot origin metadata", nil)
+	}
+	if connectionID.Valid {
+		value := connectionID.String
+		origin.ConnectionID = &value
+	}
+	return &origin, nil
 }
 
 // InsertSourceTx publishes source metadata inside a caller-owned transaction.

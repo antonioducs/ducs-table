@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { BootstrapState, Job, SavedQuery, SourceInfo } from "@/types";
+import type { BootstrapState, ConnectionInfo, ExternalRelationInfo, Job, SavedQuery, SourceInfo } from "@/types";
 
 export interface AppTab {
   id: string;
-  sourceId: string;
+  sourceId?: string;
+  relationId?: string;
   title: string;
-  kind: "dataset" | "result";
+  kind: "dataset" | "result" | "external";
 }
 
 export interface QueryHistoryEntry {
@@ -30,6 +31,10 @@ interface PersistedPreferences {
 
 export interface AppState {
   sources: SourceInfo[];
+  connections: ConnectionInfo[];
+  schemasByConnection: Record<string, string[]>;
+  relationsBySchema: Record<string, ExternalRelationInfo[]>;
+  relationsById: Record<string, ExternalRelationInfo>;
   tabs: AppTab[];
   activeTabId?: string;
   sqlDrafts: Record<string, string>;
@@ -43,9 +48,16 @@ export interface AppState {
   resultSequence: number;
   bootstrap: (state: BootstrapState) => void;
   upsertSource: (source: SourceInfo) => void;
+  upsertConnection: (connection: ConnectionInfo) => void;
+  removeConnection: (connectionId: string) => void;
+  setConnectionSchemas: (connectionId: string, schemas: string[]) => void;
+  setExternalRelations: (connectionId: string, schema: string, relations: ExternalRelationInfo[]) => void;
+  upsertExternalRelation: (relation: ExternalRelationInfo) => void;
+  invalidateCatalog: (connectionId: string) => void;
   removeSource: (sourceId: string) => void;
   upsertJob: (job: Job) => void;
   openTab: (sourceId: string) => void;
+  openExternalTab: (relation: ExternalRelationInfo) => void;
   closeTab: (tabId: string) => void;
   selectTab: (tabId: string) => void;
   selectSource: (sourceId: string) => void;
@@ -74,6 +86,10 @@ function tabFor(source: SourceInfo): AppTab {
 
 const dataInitial = {
   sources: [] as SourceInfo[],
+  connections: [] as ConnectionInfo[],
+  schemasByConnection: {} as Record<string, string[]>,
+  relationsBySchema: {} as Record<string, ExternalRelationInfo[]>,
+  relationsById: {} as Record<string, ExternalRelationInfo>,
   tabs: [] as AppTab[],
   activeTabId: undefined as string | undefined,
   sqlDrafts: {} as Record<string, string>,
@@ -95,7 +111,7 @@ export const useAppStore = create<AppState>()(
         const sources = state.sources ?? [];
         const existingIds = new Set(sources.map((source) => source.id));
         const tabs = current.tabs
-          .filter((tab) => existingIds.has(tab.sourceId))
+          .filter((tab) => Boolean(tab.sourceId && existingIds.has(tab.sourceId)))
           .map((tab) => ({ ...tab, ...tabFor(sources.find((source) => source.id === tab.sourceId)!) }));
         const preferred = current.preferences.lastActiveSourceId;
         const preferredSource = preferred && sources.find((source) => source.id === preferred);
@@ -107,6 +123,10 @@ export const useAppStore = create<AppState>()(
             : tabs[0]?.id;
         return {
           sources,
+          connections: state.connections ?? [],
+          schemasByConnection: {},
+          relationsBySchema: {},
+          relationsById: {},
           savedQueries: state.savedQueries ?? [],
           jobs: state.jobs ?? [],
           tabs,
@@ -127,6 +147,33 @@ export const useAppStore = create<AppState>()(
         const tabs = current.tabs.map((tab) => tab.sourceId === source.id ? tabFor(source) : tab);
         return { sources, tabs };
       }),
+      upsertConnection: (connection) => set((current) => {
+        const exists = current.connections.some((item) => item.id === connection.id);
+        return { connections: exists
+          ? current.connections.map((item) => item.id === connection.id ? { ...item, ...connection } : item)
+          : [...current.connections, connection] };
+      }),
+      removeConnection: (connectionId) => set((current) => {
+        const schemasByConnection = { ...current.schemasByConnection };
+        delete schemasByConnection[connectionId];
+        const relationsBySchema = Object.fromEntries(Object.entries(current.relationsBySchema).filter(([key]) => !key.startsWith(`${connectionId}:`)));
+        const removedRelationIds = new Set(Object.values(current.relationsById).filter((relation) => relation.connectionId === connectionId).map((relation) => relation.id));
+        const relationsById = Object.fromEntries(Object.entries(current.relationsById).filter(([, relation]) => relation.connectionId !== connectionId));
+        const tabs = current.tabs.filter((tab) => !tab.relationId || !removedRelationIds.has(tab.relationId));
+        return { connections: current.connections.filter((item) => item.id !== connectionId), schemasByConnection, relationsBySchema, relationsById, tabs,
+          activeTabId: tabs.some((tab) => tab.id === current.activeTabId) ? current.activeTabId : tabs.at(-1)?.id };
+      }),
+      setConnectionSchemas: (connectionId, schemas) => set((current) => ({ schemasByConnection: { ...current.schemasByConnection, [connectionId]: schemas } })),
+      setExternalRelations: (connectionId, schema, relations) => set((current) => ({
+        relationsBySchema: { ...current.relationsBySchema, [`${connectionId}:${schema}`]: relations },
+        relationsById: { ...current.relationsById, ...Object.fromEntries(relations.map((relation) => [relation.id, relation])) },
+      })),
+      upsertExternalRelation: (relation) => set((current) => ({ relationsById: { ...current.relationsById, [relation.id]: relation } })),
+      invalidateCatalog: (connectionId) => set((current) => ({
+        schemasByConnection: Object.fromEntries(Object.entries(current.schemasByConnection).filter(([key]) => key !== connectionId)),
+        relationsBySchema: Object.fromEntries(Object.entries(current.relationsBySchema).filter(([key]) => !key.startsWith(`${connectionId}:`))),
+        relationsById: Object.fromEntries(Object.entries(current.relationsById).map(([key, relation]) => [key, relation.connectionId === connectionId ? { ...relation, columns: [], defaultOrder: [], pagingStable: false } : relation])),
+      })),
       removeSource: (sourceId) => set((current) => {
         const removedTabIds = new Set(current.tabs.filter((tab) => tab.sourceId === sourceId).map((tab) => tab.id));
         const tabs = current.tabs.filter((tab) => tab.sourceId !== sourceId);
@@ -156,6 +203,14 @@ export const useAppStore = create<AppState>()(
           preferences: { ...current.preferences, lastActiveSourceId: sourceId },
         };
       }),
+      openExternalTab: (relation) => set((current) => {
+        const tab: AppTab = { id: `external:${relation.id}`, relationId: relation.id, title: relation.name, kind: "external" };
+        return {
+          relationsById: { ...current.relationsById, [relation.id]: relation },
+          tabs: current.tabs.some((item) => item.id === tab.id) ? current.tabs : [...current.tabs, tab],
+          activeTabId: tab.id,
+        };
+      }),
       closeTab: (tabId) => set((current) => {
         const index = current.tabs.findIndex((tab) => tab.id === tabId);
         if (index < 0) return current;
@@ -175,7 +230,7 @@ export const useAppStore = create<AppState>()(
         if (!tab) return current;
         return {
           activeTabId: tabId,
-          preferences: { ...current.preferences, lastActiveSourceId: tab.sourceId },
+          preferences: { ...current.preferences, lastActiveSourceId: tab.sourceId ?? current.preferences.lastActiveSourceId },
         };
       }),
       selectSource: (sourceId) => get().openTab(sourceId),
@@ -244,6 +299,11 @@ export const useAppStore = create<AppState>()(
 export const selectActiveSource = (state: AppState): SourceInfo | undefined => {
   const sourceId = state.tabs.find((tab) => tab.id === state.activeTabId)?.sourceId;
   return state.sources.find((source) => source.id === sourceId);
+};
+
+export const selectActiveRelation = (state: AppState): ExternalRelationInfo | undefined => {
+  const relationId = state.tabs.find((tab) => tab.id === state.activeTabId)?.relationId;
+  return relationId ? state.relationsById[relationId] : undefined;
 };
 
 export const selectActiveJobs = (state: AppState): Job[] =>

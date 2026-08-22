@@ -1,4 +1,4 @@
-import { Download, FolderOpen, ListChecks, Table2 } from "lucide-react";
+import { DatabaseZap, Download, FolderOpen, ListChecks, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -6,12 +6,13 @@ import { cn } from "@/lib/utils";
 export interface TopBarProps {
   onOpen: () => void;
   onExport: () => void;
+  onAddConnection?: () => void;
   onToggleJobs: () => void;
   activeJobs: number;
   canExport: boolean;
 }
 
-export function TopBar({ onOpen, onExport, onToggleJobs, activeJobs, canExport }: TopBarProps) {
+export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, activeJobs, canExport }: TopBarProps) {
   return (
     <header className="flex h-11 shrink-0 items-center border-b border-border bg-card px-3 [--wails-draggable:drag]">
       <div className="mr-5 flex min-w-0 items-center gap-2" aria-label="Duc's Table">
@@ -27,6 +28,12 @@ export function TopBar({ onOpen, onExport, onToggleJobs, activeJobs, canExport }
               <Button variant="ghost" size="sm" onClick={onOpen}><FolderOpen aria-hidden="true" /> Open files</Button>
             </TooltipTrigger>
             <TooltipContent>Open CSV, TSV, JSON, JSONL, or XLSX files</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={onAddConnection}><DatabaseZap aria-hidden="true" /> Add connection</Button>
+            </TooltipTrigger>
+            <TooltipContent>Connect PostgreSQL or experimental MongoDB</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

@@ -19,11 +19,11 @@ import {
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import "./data-grid.css";
-import { Columns3, Copy, Expand, RotateCcw, Search, WandSparkles } from "lucide-react";
+import { Columns3, Copy, Expand, LoaderCircle, RotateCcw, Search, WandSparkles } from "lucide-react";
 import { bridge, getErrorMessage } from "@/lib/bridge";
 import { clearColumnState, loadColumnState, saveColumnState } from "@/lib/column-state";
 import { adaptFilterModel, adaptGetRowsParams, adaptSortModel } from "@/lib/grid-adapter";
-import type { ColumnInfo, DataRow, RowFilter, RowSort, SourceInfo } from "@/types";
+import type { ColumnInfo, DataRow, GridResourceRef, RowFilter, RowSort, SourceInfo } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,6 +53,9 @@ export type GridViewState = {
 
 export type DataGridProps = {
   source: SourceInfo;
+  resource?: GridResourceRef;
+  pagingStable?: boolean;
+  onReconnect?: () => void;
   onViewStateChange?: (state: GridViewState) => void;
 };
 
@@ -62,7 +65,8 @@ type CellViewer = {
 };
 
 const PREVIEW_ROW_LIMIT = 200;
-const CACHE_BLOCK_SIZE = 250;
+const LOCAL_CACHE_BLOCK_SIZE = 250;
+const REMOTE_CACHE_BLOCK_SIZE = 100;
 const DISPLAY_VALUE_LIMIT = 180;
 
 function category(column: ColumnInfo): "text" | "number" | "date" | "boolean" {
@@ -212,7 +216,12 @@ function filterFor(column: ColumnInfo): string {
   }
 }
 
-function DataGridInner({ source, onViewStateChange }: DataGridProps) {
+function DataGridInner({ source, resource = { kind: "source", sourceId: source.id }, pagingStable = true, onReconnect, onViewStateChange }: DataGridProps) {
+  const gridResource = useMemo<GridResourceRef>(() => resource.kind === "external"
+    ? { kind: "external", relationId: resource.relationId }
+    : { kind: "source", sourceId: resource.sourceId ?? source.id }, [resource.kind, resource.relationId, resource.sourceId, source.id]);
+  const external = gridResource.kind === "external";
+  const cacheBlockSize = external ? REMOTE_CACHE_BLOCK_SIZE : LOCAL_CACHE_BLOCK_SIZE;
   const columns = useMemo(() => validColumns(source.columns), [source.columns]);
   const sourceKey = `${source.id}:${source.status}:${columns.map((column) => `${column.name}:${column.type}`).join("|")}`;
   const initialColumnState = useMemo(() => safeLoadState(source.id, columns), [columns, source.id]);
@@ -230,6 +239,11 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
   const [columnState, setColumnState] = useState<ColumnState[]>(initialColumnState);
   const [viewState, setViewState] = useState<GridViewState>(initialView);
   const [resolvedRowCount, setResolvedRowCount] = useState<number | null>(source.rowCount);
+  const [rowsLoading, setRowsLoading] = useState(source.status === "ready");
+  const [firstBlockLoaded, setFirstBlockLoaded] = useState(false);
+  const [loadingRange, setLoadingRange] = useState({ start: 0, end: cacheBlockSize });
+  const [loadingStartedAt, setLoadingStartedAt] = useState(() => Date.now());
+  const [loadingNow, setLoadingNow] = useState(() => Date.now());
   const [loadError, setLoadError] = useState<string>();
   const [viewer, setViewer] = useState<CellViewer>();
   const [fullValue, setFullValue] = useState("");
@@ -249,6 +263,23 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
   useEffect(() => {
     setResolvedRowCount(source.rowCount);
   }, [source.rowCount]);
+
+  useEffect(() => {
+    setRowsLoading(source.status === "ready");
+    setFirstBlockLoaded(false);
+    setLoadingRange({ start: 0, end: cacheBlockSize });
+    const now = Date.now();
+    setLoadingStartedAt(now);
+    setLoadingNow(now);
+  }, [cacheBlockSize, source.status]);
+
+  useEffect(() => {
+    if (!rowsLoading) return;
+    const update = () => setLoadingNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [rowsLoading]);
 
   useEffect(() => {
     callbackRef.current?.(viewRef.current);
@@ -306,14 +337,24 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
   const datasource = useMemo<IDatasource | undefined>(() => {
     if (!ready) return undefined;
     let active = true;
+    let pendingRequests = 0;
     return {
-      ...(typeof source.rowCount === "number" && source.rowCount >= 0 ? { rowCount: source.rowCount } : {}),
+      ...(!external && typeof source.rowCount === "number" && source.rowCount >= 0 ? { rowCount: source.rowCount } : {}),
       getRows(params) {
         setLoadError(undefined);
+        if (pendingRequests === 0) {
+          const now = Date.now();
+          setLoadingStartedAt(now);
+          setLoadingNow(now);
+        }
+        pendingRequests += 1;
+        setRowsLoading(true);
         const startRow = Number.isFinite(params.startRow) ? Math.max(0, Math.floor(params.startRow)) : 0;
         const endRow = Number.isFinite(params.endRow)
           ? Math.max(startRow, Math.floor(params.endRow))
-          : startRow + CACHE_BLOCK_SIZE;
+          : startRow + cacheBlockSize;
+        setLoadingRange({ start: startRow, end: endRow });
+        if (startRow === 0) setFirstBlockLoaded(false);
         const limit = endRow - startRow;
         let sorts: RowSort[] = [];
         let filters: RowFilter[] = [];
@@ -326,7 +367,7 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
         publishViewState({ sorts, filters, visibleColumns });
 
         void bridge.GetRows({
-          sourceId: source.id,
+          resource: gridResource,
           offset: startRow,
           limit,
           sorts,
@@ -338,33 +379,39 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
           const responseTotal = response?.totalRows;
           const totalRows = typeof responseTotal === "number" && Number.isFinite(responseTotal) && responseTotal >= 0
             ? Math.floor(responseTotal)
-            : typeof source.rowCount === "number" && source.rowCount >= 0
+            : !external && typeof source.rowCount === "number" && source.rowCount >= 0
               ? Math.floor(source.rowCount)
-              : rows.length < limit ? startRow + rows.length : -1;
+              : response?.hasMore === false || rows.length < limit ? startRow + rows.length : -1;
           if (totalRows >= 0) setResolvedRowCount(totalRows);
           params.successCallback(rows, totalRows);
+          if (startRow === 0) setFirstBlockLoaded(true);
         }).catch((error: unknown) => {
           if (!active) return;
           setLoadError(getErrorMessage(error));
           params.failCallback();
+        }).finally(() => {
+          if (!active) return;
+          pendingRequests = Math.max(0, pendingRequests - 1);
+          setRowsLoading(pendingRequests > 0);
         });
       },
       destroy() {
         active = false;
       },
     };
-  }, [columns, publishViewState, ready, source.id, source.rowCount]);
+  }, [cacheBlockSize, columns, external, gridResource, publishViewState, ready, source.rowCount]);
 
   const onGridReady = useCallback((event: GridReadyEvent<DataRow>) => {
     apiRef.current = event.api;
     try {
       event.api.setGridAriaProperty("label", `${source.displayName} data grid`);
       event.api.applyColumnState({ state: columnStateRef.current, applyOrder: true });
+      if (ready && datasource) event.api.setGridOption("datasource", datasource);
       synchronizeFromApi(event.api);
     } catch {
       apiRef.current = null;
     }
-  }, [source.displayName, synchronizeFromApi]);
+  }, [datasource, ready, source.displayName, synchronizeFromApi]);
 
   const persistColumns = useCallback((event: ColumnMovedEvent<DataRow> | ColumnResizedEvent<DataRow> | ColumnVisibleEvent<DataRow>) => {
     if ("finished" in event && event.finished === false) return;
@@ -461,7 +508,7 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
     const requestId = ++cellRequestRef.current;
     setCellLoading(true);
     void bridge.GetCellValue({
-      sourceId: source.id,
+      resource: gridResource,
       rowIndex,
       column,
       sorts: viewRef.current.sorts,
@@ -475,7 +522,7 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
     }).finally(() => {
       if (cellRequestRef.current === requestId) setCellLoading(false);
     });
-  }, [columns, ready, source.id]);
+  }, [columns, gridResource, ready]);
 
   const copyValue = useCallback(async () => {
     try {
@@ -510,6 +557,11 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
   const visibleCount = columns.filter((column) => !hidden.get(column.name)).length;
   const zeroRows = (ready && resolvedRowCount === 0) || (previewing && previewRows.length === 0);
   const gridMounted = columns.length > 0 && visibleCount > 0 && !zeroRows;
+  const loadingElapsedSeconds = Math.max(0, Math.floor((loadingNow - loadingStartedAt) / 1000));
+  const loadingFirstBlock = loadingRange.start === 0 && !firstBlockLoaded;
+  const loadingLabel = loadingFirstBlock
+    ? `Loading first ${loadingRange.end - loadingRange.start} rows${external ? " from the remote database" : ""}…`
+    : `Loading rows ${(loadingRange.start + 1).toLocaleString()}–${loadingRange.end.toLocaleString()}${external ? " from the remote database" : ""}…`;
 
   useEffect(() => {
     if (!gridMounted) apiRef.current = null;
@@ -586,7 +638,7 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
             {viewState.filters.length > 0 ? (
               <span>{viewState.filters.length} filter{viewState.filters.length === 1 ? "" : "s"}</span>
             ) : null}
-            <span>{resolvedRowCount === null ? "Rows calculating…" : `${resolvedRowCount.toLocaleString()} rows`}</span>
+            <span>{resolvedRowCount === null ? (external ? "Total unknown" : "Rows calculating…") : `${resolvedRowCount.toLocaleString()} rows`}</span>
           </div>
         </div>
       ) : null}
@@ -596,9 +648,28 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
           <span>Preparing for fast queries…</span> <span>Previewing the first {previewRows.length} rows</span>
         </div>
       ) : null}
+      {ready && rowsLoading && !loadError ? (
+        <div role="status" aria-live="polite" className="flex items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-[10px] text-muted-foreground">
+          <LoaderCircle className="size-3 animate-spin text-primary" />
+          <span>{loadingLabel}</span>
+          {loadingElapsedSeconds > 0 ? <span className="ml-auto tabular-nums">{loadingElapsedSeconds}s elapsed</span> : null}
+          {external && loadingFirstBlock && loadingElapsedSeconds >= 5 ? <span>Only this page is being fetched.</span> : null}
+        </div>
+      ) : null}
+      {external && !pagingStable ? <div role="status" className="border-b border-warning/25 bg-warning/10 px-3 py-1.5 text-[10px] text-warning">No stable key was detected. Rows may shift between pages while the remote source changes.</div> : null}
       {loadError ? (
-        <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-          {loadError}
+        <div role="alert" className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+          <span className="min-w-0 flex-1">{loadError}</span>
+          <Button variant="secondary" size="sm" onClick={() => {
+            setLoadError(undefined);
+            setRowsLoading(true);
+            if (loadingRange.start === 0) setFirstBlockLoaded(false);
+            const now = Date.now();
+            setLoadingStartedAt(now);
+            setLoadingNow(now);
+            apiRef.current?.purgeInfiniteCache();
+          }}><RotateCcw /> Retry rows</Button>
+          {external && onReconnect ? <Button variant="secondary" size="sm" onClick={onReconnect}>Reconnect</Button> : null}
         </div>
       ) : null}
 
@@ -616,13 +687,14 @@ function DataGridInner({ source, onViewStateChange }: DataGridProps) {
               columnDefs={columnDefs}
               defaultColDef={{ editable: false, resizable: true, suppressMovable: false }}
               rowModelType={ready ? "infinite" : "clientSide"}
-              datasource={datasource}
               rowData={previewing ? previewRows : undefined}
-              cacheBlockSize={CACHE_BLOCK_SIZE}
+              cacheBlockSize={cacheBlockSize}
               maxBlocksInCache={6}
               blockLoadDebounceMillis={150}
-              maxConcurrentDatasourceRequests={2}
+              maxConcurrentDatasourceRequests={external ? 1 : 2}
               infiniteInitialRowCount={1}
+              loading={ready && rowsLoading && !firstBlockLoaded && !loadError}
+              overlayLoadingTemplate={`<span>Loading first ${cacheBlockSize} rows${external ? " from the remote database" : ""}…</span>`}
               rowHeight={32}
               headerHeight={36}
               floatingFiltersHeight={32}
@@ -683,7 +755,7 @@ function GridMessage({ title, detail, destructive = false }: { title: string; de
 
 export function DataGrid(props: DataGridProps) {
   const schemaKey = props.source.columns.map((column) => `${column.name}:${column.type}`).join("|");
-  return <DataGridInner key={`${props.source.id}:${props.source.status}:${schemaKey}`} {...props} />;
+  return <DataGridInner key={`${props.resource?.kind ?? "source"}:${props.source.id}:${props.source.status}:${schemaKey}`} {...props} />;
 }
 
 export default DataGrid;

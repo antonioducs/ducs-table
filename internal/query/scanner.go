@@ -12,10 +12,15 @@ var forbiddenTokens = map[string]struct{}{
 	"ALTER": {}, "ATTACH": {}, "CALL": {}, "CHECKPOINT": {}, "COPY": {}, "CREATE": {},
 	"DELETE": {}, "DETACH": {}, "DROP": {}, "EXECUTE": {}, "EXPORT": {},
 	"FORCE": {}, "IMPORT": {}, "INSERT": {}, "INSTALL": {}, "LOAD": {},
-	"FORCE_CHECKPOINT": {}, "HTTP_DELETE": {}, "HTTP_POST": {}, "HTTP_PUT": {},
+	"FORCE_CHECKPOINT": {}, "HTTP_DELETE": {}, "HTTP_GET": {}, "HTTP_HEAD": {}, "HTTP_PATCH": {}, "HTTP_POST": {}, "HTTP_PUT": {},
 	"MERGE": {}, "NEXTVAL": {}, "PREPARE": {}, "PRAGMA": {}, "REPLACE": {},
 	"RESET": {}, "SET": {}, "SETSEED": {}, "TRUNCATE": {}, "UPDATE": {},
-	"USE": {}, "VACUUM": {}, "WRITE_BLOB": {}, "INTO": {},
+	"USE": {}, "VACUUM": {}, "WRITE_BLOB": {}, "WRITE_TEXT": {}, "INTO": {},
+	"POSTGRES_EXECUTE": {}, "POSTGRES_QUERY": {}, "POSTGRES_SCAN": {},
+	"POSTGRES_SCAN_PUSHDOWN": {}, "POSTGRES_ATTACH": {}, "POSTGRES_CONFIGURE_POOL": {},
+	"PG_CLEAR_CACHE": {}, "MONGO_SCAN": {}, "MONGO_CLEAR_CACHE": {},
+	"DUCKDB_SECRETS": {}, "DUCKDB_SECRET_TYPES": {}, "WHICH_SECRET": {}, "DUCKDB_DATABASES": {}, "PRAGMA_DATABASE_LIST": {}, "DUCKDB_LOGS": {}, "DUCKDB_LOG_CONTEXTS": {}, "DUCKDB_PREPARED_STATEMENTS": {}, "DUCKDB_EXTENSIONS": {}, "DUCKDB_EXTENSION_REPOSITORIES": {},
+	"QUERY": {}, "QUERY_TABLE": {}, "READ_POSTGRES_BINARY": {},
 }
 
 type scanResult struct {
@@ -83,6 +88,9 @@ func scanSQL(input string) (scanResult, int, error) {
 			continue
 		}
 		if input[i] == '\'' {
+			if semicolonByte >= 0 {
+				return result, -1, invalidSyntax("Only a trailing semicolon is allowed")
+			}
 			end, ok := consumeQuoted(input, i, '\'')
 			if !ok {
 				return result, -1, invalidSyntax("SQL string is not terminated")
@@ -91,9 +99,16 @@ func scanSQL(input string) (scanResult, int, error) {
 			continue
 		}
 		if input[i] == '"' {
+			if semicolonByte >= 0 {
+				return result, -1, invalidSyntax("Only a trailing semicolon is allowed")
+			}
 			end, ok := consumeQuoted(input, i, '"')
 			if !ok {
 				return result, -1, invalidSyntax("Quoted identifier is not terminated")
+			}
+			identifier := strings.ReplaceAll(input[i+1:end-1], `""`, `"`)
+			if next, ok := nextSignificant(input, end); ok && input[next] == '(' {
+				result.tokens = append(result.tokens, strings.ToUpper(identifier))
 			}
 			i = end
 			continue
@@ -129,6 +144,34 @@ func scanSQL(input string) (scanResult, int, error) {
 		i += size
 	}
 	return result, semicolonByte, nil
+}
+
+func nextSignificant(input string, start int) (int, bool) {
+	for i := start; i < len(input); {
+		r, size := utf8.DecodeRuneInString(input[i:])
+		if unicode.IsSpace(r) {
+			i += size
+			continue
+		}
+		if i+1 < len(input) && input[i:i+2] == "--" {
+			i += 2
+			for i < len(input) && input[i] != '\n' && input[i] != '\r' {
+				_, n := utf8.DecodeRuneInString(input[i:])
+				i += n
+			}
+			continue
+		}
+		if i+1 < len(input) && input[i:i+2] == "/*" {
+			end, ok := consumeBlockComment(input, i)
+			if !ok {
+				return 0, false
+			}
+			i = end
+			continue
+		}
+		return i, true
+	}
+	return 0, false
 }
 
 func consumeQuoted(input string, start int, quote byte) (int, bool) {

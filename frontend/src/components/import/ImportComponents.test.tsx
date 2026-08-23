@@ -31,7 +31,7 @@ function source(status: SourceInfo["status"], rowCount: number | null = null): S
 }
 
 describe("import presentation", () => {
-  it("renders the exact empty-state copy and green drag feedback", () => {
+  it("renders the exact empty-state copy and accent drag feedback", () => {
     const onChoose = vi.fn();
     const { rerender } = render(<EmptyState onChoose={onChoose} projectName="Analytics" />);
     expect(screen.getByText("Drop a data file anywhere")).toBeInTheDocument();

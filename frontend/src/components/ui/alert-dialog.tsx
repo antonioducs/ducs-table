@@ -14,7 +14,7 @@ export const AlertDialogContent = React.forwardRef<
     <AlertDialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px]" />
     <AlertDialogPrimitive.Content
       ref={ref}
-      className={cn("fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-popover p-5 shadow-2xl outline-none", className)}
+      className={cn("ducs-glass-popover fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-white/10 bg-popover p-5 outline-none", className)}
       {...props}
     />
   </AlertDialogPrimitive.Portal>

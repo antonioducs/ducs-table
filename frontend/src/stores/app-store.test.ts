@@ -152,9 +152,10 @@ describe("normalized project store", () => {
     useAppStore.getState().setGlobalConnections([connection]);
     useAppStore.getState().setDraft("p1", "select secret_value");
     useAppStore.getState().upsertSource("p1", source("p1"));
-    useAppStore.getState().setPanel({ sqlCollapsed: true });
+    useAppStore.getState().setPanel({ sqlCollapsed: true, aiCollapsed: false, aiSize: 31 });
     const persisted = localStorage.getItem("ducs-table:layout:v2") ?? "";
     expect(persisted).toContain("sqlCollapsed");
+    expect(persisted).toContain("aiSize");
     expect(persisted).not.toContain("db.internal");
     expect(persisted).not.toContain("select secret_value");
     expect(persisted).not.toContain("customers-id");

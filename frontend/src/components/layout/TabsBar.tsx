@@ -32,7 +32,7 @@ export function TabsBar({ tabs, activeTabId, onSelect, onClose }: TabsBarProps) 
 
   return (
     <TooltipProvider delayDuration={450}>
-      <div role="tablist" aria-label="Open sources" className="flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted">
+      <div role="tablist" aria-label="Open sources" className="ducs-glass-bar flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted">
         {tabs.length === 0 && <span className="flex items-center px-3 text-[10px] text-muted-foreground">No open tables</span>}
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
@@ -42,7 +42,7 @@ export function TabsBar({ tabs, activeTabId, onSelect, onClose }: TabsBarProps) 
               key={tab.id}
               className={cn(
                 "group relative flex min-w-28 max-w-52 shrink-0 items-center border-r border-border",
-                active ? "bg-background text-foreground" : "bg-card/50 text-muted-foreground hover:bg-card hover:text-foreground",
+                active ? "bg-white/[0.045] text-foreground" : "bg-transparent text-muted-foreground hover:bg-white/[0.035] hover:text-foreground",
               )}
             >
               {active && <span className="absolute inset-x-0 top-0 h-px bg-primary" aria-hidden="true" />}

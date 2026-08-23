@@ -3,7 +3,9 @@ node_modules/
 
 # Wails / frontend generated output
 build/bin/
+build/ai-sidecar-stage/
 frontend/dist/
+ai-sidecar/dist/
 frontend/wailsjs/
 frontend/package.json.md5
 app-dist/

@@ -400,6 +400,136 @@ export interface SnapshotFailedEvent {
 }
 export interface FileDropEvent { projectId?: string; paths: string[] }
 
+export type AIProvider = "codex" | "claude";
+export type AIMessageStatus = "complete" | "streaming" | "interrupted" | "cancelled" | "error";
+
+export interface AIConfig {
+  projectId: string;
+  provider: AIProvider;
+  model: string;
+  reasoningEffort?: string;
+  fastMode: boolean;
+  consent: boolean;
+}
+
+export interface AIProviderStatus {
+  provider: AIProvider;
+  available: boolean;
+  authenticated: boolean;
+  account?: unknown;
+  version?: string;
+  error?: string;
+}
+
+export interface AIModel {
+  id: string;
+  name: string;
+  description?: string;
+  raw?: unknown;
+}
+
+export interface AIModelOption {
+  provider: AIProvider;
+  model: AIModel;
+}
+
+export interface AIConversation {
+  id: string;
+  projectId: string;
+  title: string;
+  provider: AIProvider;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIMessage {
+  id: string;
+  conversationId: string;
+  sequence: number;
+  role: "user" | "assistant" | "tool" | "system";
+  content: string;
+  reasoning?: string;
+  status: AIMessageStatus;
+  error?: string;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIConversationDetail {
+  conversation: AIConversation;
+  messages: AIMessage[];
+}
+
+export interface AICreateConversationRequest { projectId: string; title?: string; provider: AIProvider; model: string }
+export interface AIConversationRequest { projectId: string; conversationId: string }
+export interface AISendRequest extends AIConversationRequest { prompt: string; provider?: AIProvider; model?: string; reasoningEffort?: string; fastMode?: boolean; contextLabel?: string; consent?: boolean }
+export interface AIStopRequest { projectId: string; conversationId?: string; runId?: string }
+export type AIApprovalDecision = "deny" | "allow_once" | "allow_conversation";
+export interface AIApprovalResponse { approvalId: string; decision: AIApprovalDecision }
+
+export interface AIRun {
+  id: string;
+  projectId: string;
+  conversationId: string;
+  chatId: string;
+  provider: AIProvider;
+  assistantMessageId: string;
+  state: string;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export type AIChatEvent = {
+  type: string;
+  sessionId?: string;
+  text?: string;
+  partId?: string;
+  toolCallId?: string;
+  name?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  code?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd?: number;
+};
+
+export interface AIStreamEvent {
+  runId: string;
+  projectId: string;
+  conversationId: string;
+  messageId: string;
+  chatId: string;
+  provider: AIProvider;
+  event: AIChatEvent;
+}
+
+export interface AIApprovalRequest {
+  id: string;
+  projectId: string;
+  conversationId: string;
+  runId: string;
+  toolCallId: string;
+  tool: string;
+  summary: string;
+  input: unknown;
+  createdAt: string;
+}
+
+export interface AIProviderUpdatedEvent extends Partial<AIProviderStatus> {
+  provider?: AIProvider;
+  method?: string;
+  event?: string;
+  payload?: unknown;
+  result?: unknown;
+}
+
 export type BridgeEventMap = {
   "ducs:job-updated": Job;
   "ducs:dataset-preview": ProjectPreviewEvent;
@@ -411,4 +541,8 @@ export type BridgeEventMap = {
   "ducs:catalog-invalidated": { projectId: string; connectionId: string };
   "ducs:snapshot-ready": ProjectSourceEvent;
   "ducs:snapshot-failed": SnapshotFailedEvent;
+  "ducs:ai-stream": AIStreamEvent;
+  "ducs:ai-runtime": AIRun;
+  "ducs:ai-provider-updated": AIProviderUpdatedEvent;
+  "ducs:ai-approval-request": AIApprovalRequest;
 };

@@ -139,7 +139,7 @@ export function Sidebar(props: SidebarProps) {
   };
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-r border-border bg-card" aria-label="Data sources and saved SQL">
+    <aside className="ducs-glass-panel flex h-full min-h-0 flex-col border-r border-border bg-card" aria-label="Data sources and saved SQL">
       <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
         <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground" title={props.projectName}>{props.projectName ?? "Workspace"}</span>
         <Badge variant="muted" className="ml-auto">{tables.length} tables</Badge>

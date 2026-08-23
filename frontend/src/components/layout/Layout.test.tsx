@@ -14,15 +14,18 @@ describe("layout controls", () => {
     const onOpen = vi.fn();
     const onExport = vi.fn();
     const onToggleJobs = vi.fn();
-    render(<TopBar onOpen={onOpen} onExport={onExport} onToggleJobs={onToggleJobs} activeJobs={2} canExport />);
+    const onToggleAI = vi.fn();
+    render(<TopBar onOpen={onOpen} onExport={onExport} onToggleJobs={onToggleJobs} onToggleAI={onToggleAI} activeJobs={2} canExport />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open files" }));
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("button", { name: "Jobs, 2 active" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI" }));
 
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onExport).toHaveBeenCalledOnce();
     expect(onToggleJobs).toHaveBeenCalledOnce();
+    expect(onToggleAI).toHaveBeenCalledOnce();
   });
 
   it("keeps tab selection and close actions separate", () => {

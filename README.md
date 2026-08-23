@@ -14,6 +14,7 @@ Duc's Table is a private, local-first macOS SQL workspace for files and database
 - Saves query results as local tables, saves named SQL, and exports entire or filtered/sorted views to CSV.
 - Persists each project's SQL draft, valid tabs, 20 recent executions, and result-name sequence in the local DuckDB workspace.
 - Persists local datasets, snapshots, SQL, safe connection metadata, and lightweight global layout preferences between launches.
+- Offers an optional AI assistant backed by OpenAI Codex or Anthropic Claude, with project-scoped metadata tools and separately approved query previews.
 
 Imported datasets, snapshots, and remote databases are read-only in the UI. Original files and remote data are never modified.
 
@@ -67,6 +68,14 @@ LEFT JOIN "catalog_mongo"."crm"."customers" AS m
   ON m.customer_id = c.customer_id;
 ```
 
+## Optional AI assistant
+
+AI is disabled until you choose and authenticate a provider. Before the first prompt is sent, Duc's Table asks for explicit consent and identifies the selected provider. Consent is remembered in the project's local DuckDB AI settings. Every query preview requires a separate approval and is limited to 100 rows, 256 KiB, and 10 seconds. The assistant cannot receive database passwords or unrestricted database access, and provider-native filesystem, shell, web, plugin, skill, and agent tools are disabled.
+
+When you send a message, the selected provider may receive the prompt, model and system instructions, provider conversation context, and results of the bounded tools the model chooses to call. Tool results can include project and source names/IDs, table and catalog names, schemas, columns, row counts, sanitized connection names/provider/status, validated SQL, and—only after the separate approval—preview rows. Provider authentication and inference are optional network egress to OpenAI or Anthropic and are governed by that provider's terms and retention policy. Conversations and provider session metadata are also stored locally in the Duc's Table workspace/runtime directories.
+
+Codex authentication uses a personal ChatGPT/Codex login. Claude requires the Claude Code CLI in a standard installation location (including Homebrew) or available as `claude` on `PATH`, plus a personal Claude.ai subscription authenticated through `claude auth login --claudeai`; API-key-only Claude authentication is not accepted by this integration.
+
 ## Credentials and privacy
 
 See the concise [privacy policy](PRIVACY.md).
@@ -75,12 +84,13 @@ Passwords are stored exclusively in macOS Keychain, keyed by the Duc's Table ser
 
 Passwords and full credential-bearing URIs are not stored in `workspace.duckdb`, bootstrap payloads, events, Zustand/localStorage, logs, or frontend error details. DuckDB secrets used for PostgreSQL are temporary and removed on disconnect/shutdown. MongoDB URIs are constructed and escaped only in backend memory.
 
-Duc's Table has no account, cloud backend, analytics, telemetry, or file upload. Explicit network operations are limited to:
+Duc's Table has no app account, cloud backend, analytics, telemetry, or automatic file upload. Explicit network operations are limited to:
 
 - connections the user configured or explicitly enabled for auto-connect;
-- first-use downloads of the allowlisted DuckDB extensions.
+- first-use downloads of the allowlisted DuckDB extensions; and
+- optional AI provider authentication, model discovery, prompts, conversation context, and approved bounded-tool results after the user enables the assistant and consents.
 
-File contents, query results, and snapshots remain in the local Go/DuckDB process and local files.
+Outside data the user places directly in a prompt and an explicitly approved AI query preview, file contents, query results, and snapshots are not automatically sent to an AI provider.
 
 ## Requirements
 
@@ -89,6 +99,7 @@ File contents, query results, and snapshots remain in the local Go/DuckDB proces
 - Node.js 22 or newer and npm
 - Xcode Command Line Tools
 - Wails v2 stable
+- For the optional Claude provider: Claude Code in a standard installation location or on `PATH`, and a compatible personal Claude.ai subscription
 
 Install Wails if needed:
 
@@ -102,6 +113,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 ```sh
 npm install
 npm --prefix frontend install
+npm run ai:install
 npm run dev
 ```
 
@@ -110,6 +122,12 @@ npm run build
 ```
 
 The macOS application is written to `build/bin/ducs-table.app`. DuckDB uses CGO, so the build targets the current machine architecture.
+
+Stop `wails dev` and close any copy of the app from `build/bin` before running a production build. The build preflight enforces this because Wails dev and production otherwise share that output path, allowing a dev cleanup to remove the freshly built executable.
+
+The root build compiles the sidecar, builds Wails, then copies an architecture-native bundle to `build/bin/ducs-table.app/Contents/Resources/ai-sidecar`. That bundle contains `dist`, production `node_modules`, the current platform's optional Codex and Anthropic packages, a copy of the current Node executable, and `launch-ai-sidecar`. Executable modes are retained, and the packaged app resolves that bundled Node runtime without depending on `node` from the user's `PATH`.
+
+Local builds are re-signed ad hoc after resources are copied. Set `DUCS_CODESIGN_IDENTITY` to the intended signing identity for a signed distribution build, or `DUCS_SKIP_CODESIGN=1` only when a later packaging step will sign the completed app bundle.
 
 ## Checks
 
@@ -120,8 +138,11 @@ go test ./...
 npm run typecheck
 npm run lint
 npm run test:unit
-wails build -clean
+npm run ai:test
+npm run build
 ```
+
+`npm run ai:verify` checks the packaged Node runtime, sidecar entry point, production dependencies, and current-platform native packages, then runs an offline JSONL `ping`/`shutdown` smoke test. It does not authenticate or contact either AI provider.
 
 The standard suite is deterministic and requires no database, Docker, or network. Live provider tests are opt-in:
 

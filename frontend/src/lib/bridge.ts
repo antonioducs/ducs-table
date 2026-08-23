@@ -29,6 +29,22 @@ import type {
   UpdateConnectionInput,
   WorkbookSheets,
   XLSXImportRequest,
+  AIApprovalRequest,
+  AIApprovalResponse,
+  AIChatEvent,
+  AIConfig,
+  AIConversation,
+  AIConversationDetail,
+  AIConversationRequest,
+  AICreateConversationRequest,
+  AIModel,
+  AIProvider,
+  AIProviderStatus,
+  AIProviderUpdatedEvent,
+  AIRun,
+  AISendRequest,
+  AIStopRequest,
+  AIStreamEvent,
 } from "@/types";
 import { installWailsErrorNormalizer } from "@/lib/wails-error-normalizer";
 
@@ -51,6 +67,155 @@ function object(value: unknown): RawObject {
 
 function string(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function aiField(raw: RawObject, ...names: string[]): unknown {
+  for (const name of names) {
+    if (raw[name] !== undefined) return raw[name];
+    const pascal = name.charAt(0).toUpperCase() + name.slice(1);
+    if (raw[pascal] !== undefined) return raw[pascal];
+    const snake = name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    if (raw[snake] !== undefined) return raw[snake];
+    const normalizedName = name.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const matchingKey = Object.keys(raw).find((key) => key.replace(/[^a-z0-9]/gi, "").toLowerCase() === normalizedName);
+    if (matchingKey !== undefined) return raw[matchingKey];
+  }
+  return undefined;
+}
+
+function aiString(raw: RawObject, name: string, fallback = ""): string {
+  const value = aiField(raw, name);
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  return fallback;
+}
+
+function aiBoolean(raw: RawObject, name: string): boolean | undefined {
+  const value = aiField(raw, name);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string" && ["true", "false"].includes(value.toLowerCase())) return value.toLowerCase() === "true";
+  return undefined;
+}
+
+function normalizeAIProvider(value: unknown, fallback: AIProvider = "codex"): AIProvider {
+  const provider = String(value).toLowerCase();
+  if (provider === "claude") return "claude";
+  if (provider === "codex") return "codex";
+  return fallback;
+}
+
+function normalizeAIMetadata(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value) as unknown; } catch { return value; }
+}
+
+export function normalizeAIConfig(value: unknown, projectId = ""): AIConfig {
+  const raw = object(value);
+  return {
+    projectId: aiString(raw, "projectId", projectId),
+    provider: normalizeAIProvider(aiField(raw, "provider")),
+    model: aiString(raw, "model"),
+    reasoningEffort: aiString(raw, "reasoningEffort") || undefined,
+    fastMode: aiBoolean(raw, "fastMode") ?? false,
+    consent: aiBoolean(raw, "consent") ?? false,
+  };
+}
+
+export function normalizeAIProviderStatus(value: unknown, provider?: AIProvider): AIProviderStatus {
+  const raw = object(value);
+  return {
+    provider: normalizeAIProvider(aiField(raw, "provider"), provider ?? "codex"),
+    available: aiBoolean(raw, "available") ?? false,
+    authenticated: aiBoolean(raw, "authenticated") ?? false,
+    account: aiField(raw, "account"),
+    version: aiString(raw, "version") || undefined,
+    error: aiString(raw, "error") || undefined,
+  };
+}
+
+export function normalizeAIModel(value: unknown): AIModel {
+  const raw = object(value);
+  const id = aiString(raw, "id") || aiString(raw, "model") || aiString(raw, "slug") || string(value);
+  return {
+    id,
+    name: aiString(raw, "name") || aiString(raw, "displayName") || aiString(raw, "label") || id,
+    description: aiString(raw, "description") || undefined,
+    raw: aiField(raw, "raw") ?? value,
+  };
+}
+
+export function normalizeAIConversation(value: unknown, projectId = ""): AIConversation {
+  const raw = object(value);
+  return {
+    id: aiString(raw, "id"),
+    projectId: aiString(raw, "projectId", projectId),
+    title: aiString(raw, "title", "New conversation"),
+    provider: normalizeAIProvider(aiField(raw, "provider")),
+    model: aiString(raw, "model"),
+    createdAt: aiString(raw, "createdAt"),
+    updatedAt: aiString(raw, "updatedAt"),
+  };
+}
+
+export function normalizeAIMessage(value: unknown) {
+  const raw = object(value);
+  const status = aiString(raw, "status", "complete");
+  return {
+    id: aiString(raw, "id"),
+    conversationId: aiString(raw, "conversationId"),
+    sequence: Number(aiField(raw, "sequence")) || 0,
+    role: (["user", "assistant", "tool", "system"].includes(aiString(raw, "role")) ? aiString(raw, "role") : "assistant") as "user" | "assistant" | "tool" | "system",
+    content: aiString(raw, "content"),
+    reasoning: aiString(raw, "reasoning") || undefined,
+    status: (["streaming", "interrupted", "cancelled", "error"].includes(status) ? status : "complete") as "complete" | "streaming" | "interrupted" | "cancelled" | "error",
+    error: aiString(raw, "error") || undefined,
+    metadata: normalizeAIMetadata(aiField(raw, "metadata")),
+    createdAt: aiString(raw, "createdAt"),
+    updatedAt: aiString(raw, "updatedAt"),
+  };
+}
+
+export function normalizeAIRun(value: unknown): AIRun {
+  const raw = object(value);
+  return {
+    id: aiString(raw, "id"), projectId: aiString(raw, "projectId"), conversationId: aiString(raw, "conversationId"),
+    chatId: aiString(raw, "chatId"), provider: normalizeAIProvider(aiField(raw, "provider")),
+    assistantMessageId: aiString(raw, "assistantMessageId"), state: aiString(raw, "state", "running"),
+    error: aiString(raw, "error") || undefined, startedAt: aiString(raw, "startedAt"), finishedAt: aiString(raw, "finishedAt") || undefined,
+  };
+}
+
+function normalizeAIChatEvent(value: unknown): AIChatEvent {
+  const raw = object(value);
+  const number = (name: string) => typeof aiField(raw, name) === "number" ? aiField(raw, name) as number : undefined;
+  return {
+    type: aiString(raw, "type"), sessionId: aiString(raw, "sessionId") || undefined,
+    text: aiString(raw, "text") || undefined, partId: aiString(raw, "partId") || undefined,
+    toolCallId: aiString(raw, "toolCallId") || undefined, name: aiString(raw, "name") || undefined,
+    input: aiField(raw, "input"), output: aiField(raw, "output"),
+    error: aiString(raw, "error") || aiString(raw, "message") || undefined, code: aiString(raw, "code") || undefined,
+    inputTokens: number("inputTokens"), outputTokens: number("outputTokens"), cacheReadTokens: number("cacheReadTokens"),
+    cacheWriteTokens: number("cacheWriteTokens"), costUsd: number("costUsd"),
+  };
+}
+
+function normalizeAIStream(value: unknown): AIStreamEvent {
+  const raw = object(value);
+  return {
+    runId: aiString(raw, "runId"), projectId: aiString(raw, "projectId"), conversationId: aiString(raw, "conversationId"),
+    messageId: aiString(raw, "messageId"), chatId: aiString(raw, "chatId"),
+    provider: normalizeAIProvider(aiField(raw, "provider")), event: normalizeAIChatEvent(aiField(raw, "event")),
+  };
+}
+
+function normalizeAIApproval(value: unknown): AIApprovalRequest {
+  const raw = object(value);
+  return {
+    id: aiString(raw, "id"), projectId: aiString(raw, "projectId"), conversationId: aiString(raw, "conversationId"),
+    runId: aiString(raw, "runId"), toolCallId: aiString(raw, "toolCallId"), tool: aiString(raw, "tool"),
+    summary: aiString(raw, "summary", "Allow this AI action?"), input: aiField(raw, "input"), createdAt: aiString(raw, "createdAt"),
+  };
 }
 
 function errorInfo(value: unknown): AppErrorInfo | undefined {
@@ -267,6 +432,25 @@ function normalizeImportResult(value: unknown, projectId: string): ImportPathsRe
 
 function normalizeEvent<K extends keyof BridgeEventMap>(eventName: K, value: unknown): BridgeEventMap[K] {
   const raw = object(value);
+  if (eventName === "ducs:ai-stream") return normalizeAIStream(value) as BridgeEventMap[K];
+  if (eventName === "ducs:ai-runtime") return normalizeAIRun(value) as BridgeEventMap[K];
+  if (eventName === "ducs:ai-approval-request") return normalizeAIApproval(value) as BridgeEventMap[K];
+  if (eventName === "ducs:ai-provider-updated") {
+    const nestedPayload = object(aiField(raw, "payload"));
+    const providerValue = aiField(raw, "provider") ?? aiField(nestedPayload, "provider");
+    const event: AIProviderUpdatedEvent = {
+      ...raw,
+      provider: providerValue ? normalizeAIProvider(providerValue) : undefined,
+      method: aiString(raw, "method") || undefined,
+      event: aiString(raw, "event") || undefined,
+      available: aiBoolean(raw, "available") ?? aiBoolean(nestedPayload, "available"),
+      authenticated: aiBoolean(raw, "authenticated") ?? aiBoolean(nestedPayload, "authenticated"),
+      error: aiString(raw, "error") || aiString(nestedPayload, "error") || undefined,
+      payload: aiField(raw, "payload"),
+      result: aiField(raw, "result"),
+    };
+    return event as BridgeEventMap[K];
+  }
   if (eventName === "ducs:job-updated") return normalizeJob(raw) as BridgeEventMap[K];
   if (eventName === "ducs:connection-updated") return raw as BridgeEventMap[K];
   if (eventName === "ducs:file-drop") {
@@ -294,6 +478,9 @@ function normalizeEvent<K extends keyof BridgeEventMap>(eventName: K, value: unk
 }
 
 export const bridge = {
+  OpenExternalURL(url: string): void {
+    if (/^https?:\/\//i.test(url)) window.runtime?.BrowserOpenURL?.(url);
+  },
   async Bootstrap(): Promise<Bootstrap> {
     const raw = object(await app().Bootstrap());
     const workspace = raw.workspace && typeof raw.workspace === "object" ? normalizeProjectWorkspace(object(raw.workspace)) : undefined;
@@ -406,6 +593,38 @@ export const bridge = {
   RefreshSnapshot(request: { projectId: string; sourceId: string }): Promise<Job> {
     return app().RefreshSnapshot(request).then((job) => normalizeJob(job, request.projectId));
   },
+
+  async AIGetConfig(projectId: string): Promise<AIConfig> {
+    return normalizeAIConfig(await app().AIGetConfig(projectId), projectId);
+  },
+  async AIProviderStatus(provider: AIProvider): Promise<AIProviderStatus> {
+    return normalizeAIProviderStatus(await app().AIProviderStatus(provider), provider);
+  },
+  AIProviderLogin(provider: AIProvider): Promise<unknown> { return app().AIProviderLogin(provider); },
+  AIProviderLogout(provider: AIProvider): Promise<void> { return app().AIProviderLogout(provider); },
+  async AIProviderListModels(provider: AIProvider): Promise<AIModel[]> {
+    const api = app();
+    const result = await (api.AIListModels ?? api.AIProviderListModels)(provider);
+    return (Array.isArray(result) ? result : []).map(normalizeAIModel).filter((model) => model.id);
+  },
+  async AIListConversations(projectId: string): Promise<AIConversation[]> {
+    const result = await app().AIListConversations(projectId);
+    return (Array.isArray(result) ? result : []).map((conversation) => normalizeAIConversation(conversation, projectId));
+  },
+  async AICreateConversation(request: AICreateConversationRequest): Promise<AIConversation> {
+    return normalizeAIConversation(await app().AICreateConversation(request), request.projectId);
+  },
+  async AIGetConversation(request: AIConversationRequest): Promise<AIConversationDetail> {
+    const raw = object(await app().AIGetConversation(request));
+    return {
+      conversation: normalizeAIConversation(aiField(raw, "conversation"), request.projectId),
+      messages: (Array.isArray(aiField(raw, "messages")) ? aiField(raw, "messages") as unknown[] : []).map(normalizeAIMessage),
+    };
+  },
+  AIDeleteConversation(request: AIConversationRequest): Promise<void> { return app().AIDeleteConversation(request); },
+  async AISend(request: AISendRequest): Promise<AIRun> { return normalizeAIRun(await app().AISend(request)); },
+  async AIStop(request: AIStopRequest): Promise<AIRun> { return normalizeAIRun(await app().AIStop(request)); },
+  AIRespondApproval(request: AIApprovalResponse): Promise<void> { return app().AIRespondApproval(request); },
 
   on<K extends keyof BridgeEventMap>(eventName: K, callback: (payload: BridgeEventMap[K]) => void): () => void {
     const runtime = window.runtime;

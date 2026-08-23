@@ -1,4 +1,4 @@
-import { DatabaseZap, Download, FolderOpen, ListChecks, Table2 } from "lucide-react";
+import { Bot, DatabaseZap, Download, FolderOpen, ListChecks, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,8 @@ export interface TopBarProps {
   onExport: () => void;
   onAddConnection?: () => void;
   onToggleJobs: () => void;
+  onToggleAI?: () => void;
+  aiOpen?: boolean;
   activeJobs: number;
   canExport: boolean;
   projects?: readonly Project[];
@@ -20,11 +22,11 @@ export interface TopBarProps {
   onManageProjects?: () => void;
 }
 
-export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, activeJobs, canExport, projects = [], activeProjectId, switchingProjectId, onSelectProject, onNewProject, onManageProjects }: TopBarProps) {
+export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, onToggleAI, aiOpen, activeJobs, canExport, projects = [], activeProjectId, switchingProjectId, onSelectProject, onNewProject, onManageProjects }: TopBarProps) {
   return (
-    <header className="flex h-11 shrink-0 items-center border-b border-border bg-card px-3 [--wails-draggable:drag]">
+    <header className="ducs-glass-bar flex h-11 shrink-0 items-center border-b border-border bg-card px-3 [--wails-draggable:drag]">
       <div className="mr-2 flex min-w-0 items-center gap-2" aria-label="Duc's Table">
-        <span className="grid size-6 place-items-center rounded-md border border-primary/25 bg-primary/10 text-primary">
+        <span className="grid size-6 place-items-center rounded-md border border-white/10 bg-white/[0.045] text-primary shadow-[inset_0_1px_0_rgba(255,255,255,.06),0_8px_24px_rgba(0,0,0,.18)]">
           <Table2 className="size-3.5" aria-hidden="true" />
         </span>
         <span className="truncate text-[13px] font-semibold tracking-tight">Duc&apos;s Table</span>
@@ -62,10 +64,16 @@ export function TopBar({ onOpen, onExport, onAddConnection, onToggleJobs, active
         </nav>
         <Tooltip>
           <TooltipTrigger asChild>
+            <Button variant="ghost" size="sm" className={cn("ml-auto [--wails-draggable:no-drag]", aiOpen && "bg-primary/10 text-primary hover:text-primary")} onClick={onToggleAI} aria-pressed={aiOpen}><Bot aria-hidden="true" /> AI</Button>
+          </TooltipTrigger>
+          <TooltipContent>Toggle AI assistant</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className={cn("ml-auto [--wails-draggable:no-drag]", activeJobs > 0 && "bg-primary/10 text-primary hover:text-primary")}
+              className={cn("[--wails-draggable:no-drag]", activeJobs > 0 && "bg-primary/10 text-primary hover:text-primary")}
               onClick={onToggleJobs}
               aria-label={activeJobs > 0 ? `Jobs, ${activeJobs} active` : "Jobs"}
             >

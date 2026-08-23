@@ -20,6 +20,8 @@ var migrations = []migration{
 	{version: 1, apply: applyV1},
 	{version: 2, apply: applyV2},
 	{version: 3, apply: applyV3},
+	{version: 4, apply: applyV4},
+	{version: 5, apply: applyV5},
 }
 
 // Migrate upgrades the database in one transaction. A database created by an
@@ -306,6 +308,99 @@ func applyV3(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
+// applyV4 adds the durable, project-scoped AI transcript. Provider
+// credentials deliberately do not live in DuckDB: provider authentication is
+// owned by the isolated sidecar profile.
+func applyV4(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE ducs_meta.ai_conversations (
+			id VARCHAR PRIMARY KEY,
+			project_id VARCHAR NOT NULL,
+			title VARCHAR NOT NULL CHECK (title = trim(title) AND length(title) BETWEEN 1 AND 200),
+			provider VARCHAR NOT NULL CHECK (provider IN ('codex', 'claude')),
+			model VARCHAR NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX ai_conversations_project_updated_idx
+			ON ducs_meta.ai_conversations (project_id, updated_at)`,
+		`CREATE TABLE ducs_meta.ai_messages (
+			id VARCHAR PRIMARY KEY,
+			conversation_id VARCHAR NOT NULL,
+			sequence BIGINT NOT NULL,
+			role VARCHAR NOT NULL CHECK (role IN ('user', 'assistant', 'tool', 'system')),
+			content VARCHAR NOT NULL DEFAULT '',
+			reasoning VARCHAR NOT NULL DEFAULT '',
+			status VARCHAR NOT NULL CHECK (status IN ('complete', 'streaming', 'interrupted', 'cancelled', 'error')),
+			error VARCHAR NOT NULL DEFAULT '',
+			metadata_json VARCHAR NOT NULL DEFAULT '{}',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (conversation_id, sequence)
+		)`,
+		`CREATE INDEX ai_messages_conversation_sequence_idx
+			ON ducs_meta.ai_messages (conversation_id, sequence)`,
+		`CREATE TABLE ducs_meta.ai_provider_sessions (
+			conversation_id VARCHAR NOT NULL,
+			provider VARCHAR NOT NULL CHECK (provider IN ('codex', 'claude')),
+			session_id VARCHAR NOT NULL,
+			model VARCHAR NOT NULL,
+			tool_signature VARCHAR NOT NULL,
+			context_hash VARCHAR NOT NULL,
+			account_fingerprint VARCHAR NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (conversation_id, provider)
+		)`,
+		`CREATE TABLE ducs_meta.ai_settings (
+			project_id VARCHAR PRIMARY KEY,
+			provider VARCHAR NOT NULL CHECK (provider IN ('codex', 'claude')),
+			model VARCHAR NOT NULL,
+			reasoning_effort VARCHAR NOT NULL DEFAULT '',
+			consent BOOLEAN NOT NULL DEFAULT FALSE,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// This handles workspaces produced by prerelease V4 builds. Normal
+		// startup repeats the reconciliation so every interrupted process is
+		// repaired, not just the first process applying this migration.
+		`UPDATE ducs_meta.ai_messages
+			SET status = 'interrupted', error = 'Response interrupted when the application closed', updated_at = CURRENT_TIMESTAMP
+			WHERE status = 'streaming'`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("create AI metadata: %w", err)
+		}
+	}
+	return nil
+}
+
+func applyV5(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE ducs_meta.ai_settings_v5 (
+			project_id VARCHAR PRIMARY KEY,
+			provider VARCHAR NOT NULL CHECK (provider IN ('codex', 'claude')),
+			model VARCHAR NOT NULL,
+			reasoning_effort VARCHAR NOT NULL DEFAULT '',
+			consent BOOLEAN NOT NULL DEFAULT FALSE,
+			fast_mode BOOLEAN NOT NULL DEFAULT FALSE,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT INTO ducs_meta.ai_settings_v5
+			(project_id, provider, model, reasoning_effort, consent, fast_mode, updated_at)
+		 SELECT project_id, provider, model, reasoning_effort, consent, FALSE, updated_at
+		 FROM ducs_meta.ai_settings`,
+		`DROP TABLE ducs_meta.ai_settings`,
+		`ALTER TABLE ducs_meta.ai_settings_v5 RENAME TO ai_settings`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild AI settings for fast mode: %w", err)
+		}
+	}
+	return nil
+}
+
 func migrationColumnExists(ctx context.Context, tx *sql.Tx, table, column string) (bool, error) {
 	var exists bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
@@ -364,6 +459,14 @@ func (d *DB) CleanupStartup(ctx context.Context) error {
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM ducs_meta.datasets WHERE is_ephemeral OR schema_name = 'result'`); err != nil {
 			return fmt.Errorf("delete ephemeral metadata: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE ducs_meta.ai_messages
+			SET status = 'interrupted',
+			    error = 'Response interrupted when the application closed',
+			    updated_at = CURRENT_TIMESTAMP
+			WHERE status = 'streaming'`); err != nil {
+			return fmt.Errorf("reconcile interrupted AI messages: %w", err)
 		}
 		return nil
 	})

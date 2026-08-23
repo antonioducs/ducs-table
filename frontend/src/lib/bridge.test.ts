@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { normalizePreviewSource, normalizeProjectSession, normalizeProjectWorkspace, normalizeSource } from "./bridge";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { bridge, normalizeAIConfig, normalizeAIConversation, normalizeAIMessage, normalizeAIModel, normalizeAIProviderStatus, normalizeAIRun, normalizePreviewSource, normalizeProjectSession, normalizeProjectWorkspace, normalizeSource } from "./bridge";
+
+afterEach(() => {
+  delete window.go;
+  delete window.runtime;
+});
 
 describe("project bridge normalization", () => {
   it("maps backend SourceInfo fields while keeping preview rows transient", () => {
@@ -31,5 +36,57 @@ describe("project bridge normalization", () => {
     });
     expect(workspace.externalRelations).toHaveLength(1);
     expect(workspace.project.id).toBe("project-1");
+  });
+});
+
+describe("AI bridge normalization", () => {
+  it("accepts PascalCase, snake_case, legacy model keys, and encoded metadata", () => {
+    expect(normalizeAIConfig({ ProjectID: "p1", Provider: "claude", Model: "opus", ReasoningEffort: "high", FastMode: true, Consent: true })).toEqual({ projectId: "p1", provider: "claude", model: "opus", reasoningEffort: "high", fastMode: true, consent: true });
+    expect(normalizeAIProviderStatus({ Provider: "codex", Available: true, Authenticated: true }, "claude")).toEqual(expect.objectContaining({ provider: "codex", available: true, authenticated: true }));
+    expect(normalizeAIModel({ slug: "gpt-5", display_name: "GPT 5" })).toEqual(expect.objectContaining({ id: "gpt-5", name: "GPT 5" }));
+    expect(normalizeAIConversation({ ID: "c1", ProjectID: "p1", Provider: "claude", Model: "opus", CreatedAt: "now" })).toEqual(expect.objectContaining({ id: "c1", projectId: "p1", provider: "claude" }));
+    expect(normalizeAIMessage({ ID: "m1", ConversationID: "c1", Role: "assistant", Status: "streaming", Metadata: "{\"safe\":true}" })).toEqual(expect.objectContaining({ id: "m1", status: "streaming", metadata: { safe: true } }));
+    expect(normalizeAIRun({ ID: "r1", ConversationID: "c1", AssistantMessageID: "m1", State: "running" })).toEqual(expect.objectContaining({ id: "r1", conversationId: "c1", assistantMessageId: "m1" }));
+  });
+
+  it("calls every AI desktop contract and normalizes responses", async () => {
+    const conversation = { ID: "c1", ProjectID: "p1", Title: "Chat", Provider: "codex", Model: "gpt-5", CreatedAt: "a", UpdatedAt: "b" };
+    const api = {
+      AIGetConfig: vi.fn().mockResolvedValue({ ProjectID: "p1", Provider: "codex", Model: "gpt-5" }),
+      AIProviderStatus: vi.fn().mockResolvedValue({ Provider: "codex", Available: true, Authenticated: true }),
+      AIProviderLogin: vi.fn().mockResolvedValue({ started: true }),
+      AIProviderLogout: vi.fn().mockResolvedValue(undefined),
+      AIProviderListModels: vi.fn().mockResolvedValue([{ slug: "gpt-5", label: "GPT 5" }]),
+      AIListConversations: vi.fn().mockResolvedValue([conversation]),
+      AICreateConversation: vi.fn().mockResolvedValue(conversation),
+      AIGetConversation: vi.fn().mockResolvedValue({ Conversation: conversation, Messages: [] }),
+      AIDeleteConversation: vi.fn().mockResolvedValue(undefined),
+      AISend: vi.fn().mockResolvedValue({ ID: "r1", ProjectID: "p1", ConversationID: "c1", AssistantMessageID: "m1", State: "running" }),
+      AIStop: vi.fn().mockResolvedValue({ ID: "r1", ProjectID: "p1", ConversationID: "c1", AssistantMessageID: "m1", State: "cancelled" }),
+      AIRespondApproval: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(window, "go", { configurable: true, value: { main: { App: api } } });
+
+    expect(await bridge.AIGetConfig("p1")).toEqual(expect.objectContaining({ projectId: "p1", model: "gpt-5" }));
+    expect(await bridge.AIProviderStatus("codex")).toEqual(expect.objectContaining({ authenticated: true }));
+    await bridge.AIProviderLogin("codex"); await bridge.AIProviderLogout("codex");
+    expect(await bridge.AIProviderListModels("codex")).toEqual([expect.objectContaining({ id: "gpt-5", name: "GPT 5" })]);
+    expect(await bridge.AIListConversations("p1")).toEqual([expect.objectContaining({ id: "c1" })]);
+    expect(await bridge.AICreateConversation({ projectId: "p1", provider: "codex", model: "gpt-5" })).toEqual(expect.objectContaining({ id: "c1" }));
+    expect(await bridge.AIGetConversation({ projectId: "p1", conversationId: "c1" })).toEqual(expect.objectContaining({ messages: [] }));
+    await bridge.AIDeleteConversation({ projectId: "p1", conversationId: "c1" });
+    expect(await bridge.AISend({ projectId: "p1", conversationId: "c1", prompt: "Hi" })).toEqual(expect.objectContaining({ id: "r1", state: "running" }));
+    expect(await bridge.AIStop({ projectId: "p1", runId: "r1" })).toEqual(expect.objectContaining({ state: "cancelled" }));
+    await bridge.AIRespondApproval({ approvalId: "a1", decision: "allow_once" });
+    expect(api.AIRespondApproval).toHaveBeenCalledWith({ approvalId: "a1", decision: "allow_once" });
+  });
+
+  it("normalizes AI stream events emitted with Go field names", () => {
+    const handlers: Record<string, (payload: unknown) => void> = {};
+    Object.defineProperty(window, "runtime", { configurable: true, value: { EventsOn: (name: string, callback: (payload: unknown) => void) => { handlers[name] = callback; } } });
+    const listener = vi.fn();
+    bridge.on("ducs:ai-stream", listener);
+    handlers["ducs:ai-stream"]({ RunID: "r1", ProjectID: "p1", ConversationID: "c1", MessageID: "m1", Provider: "claude", Event: { Type: "text_delta", Text: "hello" } });
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ runId: "r1", provider: "claude", event: expect.objectContaining({ type: "text_delta", text: "hello" }) }));
   });
 });

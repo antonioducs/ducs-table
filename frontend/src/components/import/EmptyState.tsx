@@ -18,7 +18,7 @@ export function EmptyState({ onChoose, onConnect, dragActive = false, projectNam
     >
       {dragActive && <div className="pointer-events-none absolute inset-3 rounded-xl border-2 border-dashed border-primary bg-primary/5" />}
       <div className="relative max-w-xl text-center">
-        <div className="mx-auto grid size-16 place-items-center rounded-2xl border border-primary/25 bg-card text-primary shadow-[0_0_40px_rgba(50,230,126,.08)]">
+        <div className="ducs-glass-panel mx-auto grid size-16 place-items-center rounded-2xl border border-white/10 bg-card text-primary shadow-[inset_0_1px_0_rgba(255,255,255,.06),0_0_48px_rgba(139,124,246,.12)]">
           {dragActive ? <FileUp className="size-7" aria-hidden="true" /> : <Table2 className="size-7" aria-hidden="true" />}
         </div>
         <h2 className="mt-5 text-xl font-semibold tracking-tight">Drop a data file anywhere</h2>
@@ -43,7 +43,7 @@ export function EmptyState({ onChoose, onConnect, dragActive = false, projectNam
 
 function Feature({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="ducs-glass-panel rounded-lg border border-border bg-card p-3">
       <span className="text-primary [&>svg]:size-3.5">{icon}</span>
       <p className="mt-2 text-[11px] font-medium text-foreground">{title}</p>
       <p className="mt-0.5 text-[9px] leading-4 text-muted-foreground">{detail}</p>

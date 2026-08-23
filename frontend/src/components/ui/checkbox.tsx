@@ -15,7 +15,7 @@ export const Checkbox = React.forwardRef<
     )}
     {...props}
   >
-    <CheckboxPrimitive.Indicator className="grid place-items-center text-[#041008]">
+    <CheckboxPrimitive.Indicator className="grid place-items-center text-primary-foreground">
       {props.checked === "indeterminate" ? <Minus className="size-3" /> : <Check className="size-3" />}
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>

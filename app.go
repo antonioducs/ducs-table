@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"ducs-table/internal/ai"
 	"ducs-table/internal/apppaths"
 	"ducs-table/internal/connections"
 	"ducs-table/internal/credentials"
@@ -39,6 +40,7 @@ type App struct {
 	extensions  *extensions.Manager
 	federated   *federation.Session
 	connections *connections.Service
+	ai          *ai.Service
 	startupErr  error
 	closeOnce   sync.Once
 	autoConnect sync.Mutex
@@ -55,7 +57,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	db, err := database.Open(a.ctx, paths)
 	if err != nil {
-		a.startupErr = err
+		a.startupErr = workspaceOpenError(err)
 		return
 	}
 	a.db = db
@@ -79,6 +81,16 @@ func (a *App) startup(ctx context.Context) {
 	a.grid.SetExternalResolver(a.connections)
 	a.queries = query.New(db, federated)
 	a.exports = exportservice.New(db, a.grid)
+	approvals := ai.NewApprovalManager(func(request ai.ApprovalRequest) {
+		a.emit("ducs:ai-approval-request", request)
+	})
+	aiTools := ai.NewTools(a.workspace, a.connections, ai.NewDuckDBPreviewer(db, federated), approvals)
+	aiRuntime := ai.NewService(a.ctx, ai.NewRepository(db), nil, aiTools, approvals, filepath.Join(paths.BaseDir, "ai", "runtime"), a.emit)
+	supervisor := ai.NewSupervisor(a.ctx, ai.ExecStarter{
+		DataDir: filepath.Join(paths.BaseDir, "ai", "providers"),
+	}, aiRuntime.HandleRequest, aiRuntime.HandleNotification)
+	aiRuntime.SetClient(supervisor)
+	a.ai = aiRuntime
 	runtime.OnFileDrop(a.ctx, func(_, _ int, paths []string) {
 		if len(paths) > 0 {
 			a.emit("ducs:file-drop", map[string]any{"paths": paths})
@@ -90,6 +102,9 @@ func (a *App) shutdown(context.Context) {
 	a.closeOnce.Do(func() {
 		if a.ctx != nil {
 			runtime.OnFileDropOff(a.ctx)
+		}
+		if a.ai != nil {
+			_ = a.ai.Close()
 		}
 		if a.cancel != nil {
 			a.cancel()
@@ -108,8 +123,119 @@ func (a *App) shutdown(context.Context) {
 	})
 }
 
+func (a *App) AIGetConfig(projectID string) (ai.Config, error) {
+	if err := a.ready(); err != nil {
+		return ai.Config{}, err
+	}
+	if err := a.validateProject(projectID); err != nil {
+		return ai.Config{}, err
+	}
+	return a.ai.GetConfig(a.ctx, projectID)
+}
+
+func (a *App) AIProviderStatus(provider string) (ai.ProviderStatus, error) {
+	if err := a.ready(); err != nil {
+		return ai.ProviderStatus{}, err
+	}
+	return a.ai.ProviderStatus(a.ctx, ai.Provider(provider), true)
+}
+
+func (a *App) AIProviderLogin(provider string) (any, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.ai.ProviderLogin(a.ctx, ai.Provider(provider))
+}
+
+func (a *App) AIProviderLogout(provider string) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.ai.ProviderLogout(a.ctx, ai.Provider(provider))
+}
+
+func (a *App) AIProviderListModels(provider string) ([]ai.Model, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return a.ai.ListModels(a.ctx, ai.Provider(provider))
+}
+
+// AIListModels is the stable provider-neutral bridge name. The older
+// AIProviderListModels alias remains for generated bindings from early builds.
+func (a *App) AIListModels(provider string) ([]ai.Model, error) {
+	return a.AIProviderListModels(provider)
+}
+
+func (a *App) AIListConversations(projectID string) ([]ai.Conversation, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	if err := a.validateProject(projectID); err != nil {
+		return nil, err
+	}
+	return a.ai.ListConversations(a.ctx, projectID)
+}
+
+func (a *App) AICreateConversation(request ai.CreateConversationRequest) (ai.Conversation, error) {
+	if err := a.ready(); err != nil {
+		return ai.Conversation{}, err
+	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return ai.Conversation{}, err
+	}
+	return a.ai.CreateConversation(a.ctx, request)
+}
+
+func (a *App) AIGetConversation(request ai.ConversationRequest) (ai.ConversationDetail, error) {
+	if err := a.ready(); err != nil {
+		return ai.ConversationDetail{}, err
+	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return ai.ConversationDetail{}, err
+	}
+	return a.ai.GetConversation(a.ctx, request)
+}
+
+func (a *App) AIDeleteConversation(request ai.ConversationRequest) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return err
+	}
+	return a.ai.DeleteConversation(a.ctx, request)
+}
+
+func (a *App) AISend(request ai.SendRequest) (ai.Run, error) {
+	if err := a.ready(); err != nil {
+		return ai.Run{}, err
+	}
+	if err := a.validateProject(request.ProjectID); err != nil {
+		return ai.Run{}, err
+	}
+	return a.ai.Send(a.ctx, request)
+}
+
+func (a *App) AIStop(request ai.StopRequest) (ai.Run, error) {
+	if err := a.ready(); err != nil {
+		return ai.Run{}, err
+	}
+	return a.ai.Stop(a.ctx, request)
+}
+
+func (a *App) AIRespondApproval(request ai.ApprovalResponse) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return a.ai.RespondApproval(request)
+}
+
 func (a *App) ready() error {
 	if a.startupErr != nil {
+		if appErr, ok := a.startupErr.(*models.AppError); ok {
+			return appErr
+		}
 		return models.WrapError(models.CodeDatabase, "The local workspace could not be opened", a.startupErr, nil)
 	}
 	if a.db == nil || a.workspace == nil {
@@ -119,6 +245,22 @@ func (a *App) ready() error {
 		return models.WrapError(models.CodeShuttingDown, "The application is shutting down", err, nil)
 	}
 	return nil
+}
+
+func workspaceOpenError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "lock") || strings.Contains(message, "another process") || strings.Contains(message, "conflicting") {
+		return models.WrapError(
+			models.CodeConflict,
+			"Duc's Table is already open. Use the existing window and close any older instance before trying again",
+			err,
+			nil,
+		)
+	}
+	return err
 }
 
 func (a *App) validateProject(projectID string) error {

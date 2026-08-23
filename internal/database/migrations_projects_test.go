@@ -103,8 +103,70 @@ func TestV2MigratesLegacyWorkspaceWithoutDataLoss(t *testing.T) {
 	if err := db.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM ducs_meta.schema_migrations`).Scan(&versions); err != nil {
 		t.Fatal(err)
 	}
-	if projects != 1 || versions != 3 {
+	if projects != 1 || versions != 5 {
 		t.Fatalf("idempotent migration projects=%d versions=%d", projects, versions)
+	}
+}
+
+func TestV5AddsDefaultFastModeSetting(t *testing.T) {
+	db, err := OpenPath(context.Background(), filepath.Join(t.TempDir(), "ai-fast-mode.duckdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var projectID string
+	if err := db.SQL().QueryRow(`SELECT id FROM ducs_meta.projects LIMIT 1`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL().Exec(`INSERT INTO ducs_meta.ai_settings (project_id, provider, model) VALUES (?, 'codex', 'test-model')`, projectID); err != nil {
+		t.Fatal(err)
+	}
+	var fast bool
+	if err := db.SQL().QueryRow(`SELECT fast_mode FROM ducs_meta.ai_settings WHERE project_id = ?`, projectID).Scan(&fast); err != nil {
+		t.Fatal(err)
+	}
+	if fast {
+		t.Fatal("fast mode should default to false")
+	}
+}
+
+func TestV4ReconcilesInterruptedAIStreamingOnStartup(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "ai-reconcile.duckdb")
+	db, err := OpenPath(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectID string
+	if err := db.SQL().QueryRowContext(ctx, `SELECT id FROM ducs_meta.projects LIMIT 1`).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := db.SQL().ExecContext(ctx, `
+		INSERT INTO ducs_meta.ai_conversations (id, project_id, title, provider, model, created_at, updated_at)
+		VALUES ('conversation-1', ?, 'Interrupted', 'codex', 'test-model', ?, ?)`, projectID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SQL().ExecContext(ctx, `
+		INSERT INTO ducs_meta.ai_messages (id, conversation_id, sequence, role, status, created_at, updated_at)
+		VALUES ('message-1', 'conversation-1', 1, 'assistant', 'streaming', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenPath(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	var status, message string
+	if err := reopened.SQL().QueryRowContext(ctx, `SELECT status, error FROM ducs_meta.ai_messages WHERE id = 'message-1'`).Scan(&status, &message); err != nil {
+		t.Fatal(err)
+	}
+	if status != "interrupted" || message == "" {
+		t.Fatalf("reconciled status=%q error=%q", status, message)
 	}
 }
 

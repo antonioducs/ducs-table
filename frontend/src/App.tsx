@@ -47,6 +47,8 @@ import { ConnectionDialog } from "@/components/connections/ConnectionDialog";
 import { ConnectionAttachDialog } from "@/components/connections/ConnectionAttachDialog";
 import { ConnectionManagerDialog } from "@/components/connections/ConnectionManagerDialog";
 import { ProjectManagerDialog } from "@/components/projects/ProjectManagerDialog";
+import { AIChatPanel } from "@/components/ai/AIChatPanel";
+import { useAIStore } from "@/stores/ai-store";
 
 type PendingDelete = { kind: "dataset" | "result" | "query"; projectId: string; id: string; name: string };
 type PendingDetach = { projectId: string; connection: ConnectionInfo };
@@ -527,6 +529,17 @@ export default function App() {
         }
         if (connection.status === "error" && connection.lastError) toast.error(`${connection.name}: ${connection.lastError.message}`);
       }),
+      bridge.on("ducs:ai-stream", (payload) => useAIStore.getState().handleStream(payload)),
+      bridge.on("ducs:ai-runtime", (run) => useAIStore.getState().handleRuntime(run)),
+      bridge.on("ducs:ai-approval-request", (approval) => useAIStore.getState().handleApproval(approval)),
+      bridge.on("ducs:ai-provider-updated", (update) => {
+        if (update.provider) {
+          useAIStore.getState().handleProviderUpdate(update.provider, update);
+          if (update.method === "provider.login.completed") {
+            void useAIStore.getState().refreshProvider(update.provider).catch(() => undefined);
+          }
+        }
+      }),
       bridge.on("ducs:catalog-invalidated", ({ projectId, connectionId }) => {
         if (projectId) useAppStore.getState().invalidateCatalog(projectId, connectionId);
       }),
@@ -560,10 +573,10 @@ export default function App() {
     };
   }, []);
 
-  const runQuery = async () => {
+  const runQuery = async (sqlOverride?: string) => {
     const state = useAppStore.getState();
     const projectId = state.activeProjectId;
-    const sql = projectId ? state.projectWorkspaces[projectId]?.session.sqlDraft : undefined;
+    const sql = sqlOverride ?? (projectId ? state.projectWorkspaces[projectId]?.session.sqlDraft : undefined);
     if (!projectId || !sql?.trim() || queryRunningProjects.has(projectId)) return;
     setQueryRunningProjects((current) => new Set(current).add(projectId));
     setQueryErrors((current) => ({ ...current, [projectId]: undefined }));
@@ -799,7 +812,7 @@ export default function App() {
     <div className="grid h-full place-items-center text-center"><div><WifiOff className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-[12px]">This live relation is disconnected</p><p className="mt-1 text-[10px] text-muted-foreground">Reconnect {activeConnection?.name ?? "the database"} to hydrate this tab. If the relation no longer exists, the tab will close with a warning.</p>{activeConnection && <Button variant="secondary" size="sm" className="mt-3" onClick={() => void connectDatabase(activeConnection)}><RefreshCw /> Reconnect</Button>}</div></div>
   ) : activeRelation && externalGridSource && activeProjectId ? (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-2 text-[10px] text-muted-foreground">
+      <div className="ducs-glass-bar flex h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-2 text-[10px] text-muted-foreground">
         <DatabaseZap className="size-3.5 text-primary" /><code className="min-w-0 truncate text-foreground">{activeRelation.qualifiedName}</code>
         <Button variant="ghost" size="icon-sm" aria-label="Copy qualified relation name" onClick={() => void navigator.clipboard?.writeText(activeRelation.qualifiedName)}><Copy /></Button>
         <span className="truncate border-l border-border pl-2">{activeConnection?.name ?? "External database"} · {activeConnection?.kind === "mongo" ? "MongoDB" : "PostgreSQL"}</span>
@@ -810,7 +823,7 @@ export default function App() {
     </div>
   ) : activeSource && activeProjectId ? (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-card px-2 text-[10px] text-muted-foreground">
+      <div className="ducs-glass-bar flex h-8 shrink-0 items-center gap-2 border-b border-border bg-card px-2 text-[10px] text-muted-foreground">
         <span className="truncate">SQL name: <code className="text-foreground">{activeSource.tableName}</code></span><Button variant="ghost" size="icon-sm" aria-label="Copy SQL table name" onClick={() => void navigator.clipboard?.writeText(activeSource.tableName)}><Copy /></Button>
         {activeSource.snapshot && <span className="truncate border-l border-border pl-2">Snapshot of <code className="text-foreground">{activeSource.snapshot.catalog}.{activeSource.snapshot.schema}.{activeSource.snapshot.relation}</code> · {new Date(activeSource.snapshot.refreshedAt).toLocaleString()}</span>}
         {activeSource.originalSQL && <span className="min-w-0 flex-1 truncate border-l border-border pl-2 font-mono">{activeSource.originalSQL.replace(/\s+/g, " ")}</span>}
@@ -846,11 +859,15 @@ export default function App() {
           onAddConnection={() => setAttachDialogOpen(true)}
           onExport={() => setExportOpen(true)}
           onToggleJobs={() => setJobsOpen(true)}
+          onToggleAI={() => store.setPanel({ aiCollapsed: !store.panel.aiCollapsed })}
+          aiOpen={!store.panel.aiCollapsed}
           activeJobs={activeJobs.length}
           canExport={Boolean(activeProjectId && ((activeSource?.status === "ready") || (activeRelation && activeConnection?.status === "connected")))}
         />
         {bootstrapError && <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">{bootstrapError}</div>}
         {!activeProjectId || !workspace ? <main className="grid min-h-0 flex-1 place-items-center bg-background text-center"><div><FolderPlus className="mx-auto size-8 text-primary" /><h1 className="mt-4 text-lg font-semibold">Create your first project</h1><p className="mt-1 text-[12px] text-muted-foreground">Projects keep sources, SQL drafts, tabs, and history isolated.</p><Button className="mt-4" onClick={() => { setProjectManagerCreate(true); setProjectManagerOpen(true); }}><FolderPlus /> New project</Button></div></main> : <div className="min-h-0 flex-1">
+          <PanelGroup direction="horizontal" onLayout={(sizes) => sizes[1] && store.setPanel({ aiSize: sizes[1] })}>
+            <Panel minSize={50}>
           <PanelGroup direction="horizontal" onLayout={(sizes) => store.setPanel({ sidebarSize: sizes[0] })}>
             <Panel defaultSize={store.panel.sidebarSize} minSize={15} maxSize={32}>
               <Sidebar
@@ -891,7 +908,7 @@ export default function App() {
             <Panel minSize={65}>
               <main className="flex h-full min-h-0 flex-col bg-background">
                 <TabsBar tabs={displayTabs} activeTabId={workspace.session.activeTabId} onSelect={(id) => store.selectTab(activeProjectId, id)} onClose={closeTab} />
-                {!workspaceHasItems ? content : store.panel.sqlCollapsed ? <><div className="min-h-0 flex-1">{content}</div><button className="flex h-8 shrink-0 items-center justify-center gap-1.5 border-t border-border bg-card text-[10px] text-muted-foreground hover:text-primary" onClick={() => store.setPanel({ sqlCollapsed: false })}><ChevronUp className="size-3" /> Open SQL editor</button></> : (
+                {!workspaceHasItems ? content : store.panel.sqlCollapsed ? <><div className="min-h-0 flex-1">{content}</div><button className="ducs-glass-bar flex h-8 shrink-0 items-center justify-center gap-1.5 border-t border-border bg-card text-[10px] text-muted-foreground hover:text-primary" onClick={() => store.setPanel({ sqlCollapsed: false })}><ChevronUp className="size-3" /> Open SQL editor</button></> : (
                   <PanelGroup direction="vertical" onLayout={(sizes) => sizes[1] && store.setPanel({ sqlSize: sizes[1] })}>
                     <Panel defaultSize={100 - store.panel.sqlSize} minSize={35}>{content}</Panel>
                     <PanelResizeHandle className="h-1 bg-border transition-colors hover:bg-primary/50 focus-visible:bg-primary" />
@@ -902,6 +919,22 @@ export default function App() {
                 )}
               </main>
             </Panel>
+          </PanelGroup>
+            </Panel>
+            {!store.panel.aiCollapsed && <>
+              <PanelResizeHandle className="w-1 bg-border transition-colors hover:bg-primary/50 focus-visible:bg-primary" />
+              <Panel defaultSize={store.panel.aiSize} minSize={20} maxSize={45}>
+                <AIChatPanel
+                  projectId={activeProjectId}
+                  projectName={activeProject?.name ?? workspace.project.name}
+                  sourceName={activeSource?.displayName ?? activeRelation?.qualifiedName}
+                  onClose={() => store.setPanel({ aiCollapsed: true })}
+                  onReplaceSQL={(sql) => { store.setDraft(activeProjectId, sql); store.setPanel({ sqlCollapsed: false }); }}
+                  onAppendSQL={(sql) => { store.insertIntoDraft(activeProjectId, sql); store.setPanel({ sqlCollapsed: false }); }}
+                  onExecuteSQL={(sql) => { store.setDraft(activeProjectId, sql); store.setPanel({ sqlCollapsed: false }); void runQuery(sql); }}
+                />
+              </Panel>
+            </>}
           </PanelGroup>
         </div>}
         <StatusBar source={activeSource} jobs={jobs} />
@@ -919,7 +952,7 @@ export default function App() {
       <ProjectManagerDialog open={projectManagerOpen} createOnOpen={projectManagerCreate} projects={projects} activeProjectId={activeProjectId} onOpenChange={(open) => { if (open) setProjectManagerOpen(true); else flushForDialog(() => { setProjectManagerOpen(false); setProjectManagerCreate(false); }); }} onCreate={createProject} onUpdate={updateProject} onArchive={archiveProject} onRestore={restoreProject} />
       <ConfirmDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) flushForDialog(() => setPendingDelete(undefined)); }} title={pendingDelete?.kind === "result" ? "Discard this result?" : pendingDelete?.kind === "query" ? "Delete saved query?" : "Remove this dataset?"} description={pendingDelete?.kind === "result" ? `“${pendingDelete.name}” is ephemeral and will be dropped from this project.` : pendingDelete?.kind === "query" ? `“${pendingDelete.name}” will be removed from this project's saved SQL.` : `“${pendingDelete?.name ?? "This dataset"}” will be removed from ${pendingDelete ? projectName(pendingDelete.projectId) : "the project"}. The original file remains untouched.`} actionLabel={pendingDelete?.kind === "result" ? "Discard" : "Remove"} onConfirm={() => void confirmDelete()} />
       <ConfirmDialog open={Boolean(pendingDetach)} onOpenChange={(open) => { if (!open) flushForDialog(() => setPendingDetach(undefined)); }} title="Remove connection from this project?" description={`“${pendingDetach?.connection.name ?? "This connection"}” remains available globally and can be attached again. Other projects are not affected.`} actionLabel="Remove from project" onConfirm={() => void detachConnection()} />
-      <Toaster theme="dark" position="bottom-right" richColors closeButton toastOptions={{ style: { background: "#0d120f", border: "1px solid #223029", color: "#eef6f1" } }} />
+      <Toaster theme="dark" position="bottom-right" richColors closeButton toastOptions={{ style: { background: "rgba(19, 19, 23, .94)", border: "1px solid rgba(255, 255, 255, .1)", color: "#f4f4f5", backdropFilter: "blur(24px)" } }} />
       {dragActive && workspaceHasItems && <div className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-xl border-2 border-dashed border-primary bg-background/80 text-primary backdrop-blur-sm"><div className="text-center"><p className="text-lg font-semibold">Drop to import into {activeProject?.name}</p><p className="mt-1 text-[11px] text-muted-foreground">Files are processed locally</p></div></div>}
     </TooltipProvider>
   );

@@ -33,12 +33,12 @@ export type SQLPanelProps = {
 };
 
 const editorTheme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "#0a0f0c" },
-  ".cm-content": { padding: "8px 0", caretColor: "#32e67e" },
+  "&": { height: "100%", backgroundColor: "rgba(8,8,11,.88)" },
+  ".cm-content": { padding: "8px 0", caretColor: "#8b7cf6" },
   ".cm-line": { padding: "0 10px" },
-  ".cm-tooltip": { backgroundColor: "#0d120f", border: "1px solid #223029" },
-  ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "#17231d", color: "#eef6f1" },
-  "&.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "rgba(50,230,126,.2)" },
+  ".cm-tooltip": { backgroundColor: "rgba(19,19,23,.96)", border: "1px solid rgba(255,255,255,.1)", backdropFilter: "blur(24px)" },
+  ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "rgba(139,124,246,.16)", color: "#f4f4f5" },
+  "&.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "rgba(139,124,246,.22)" },
 }, { dark: true });
 
 function completionSource(sources: SourceInfo[], externalRelations: ExternalRelationInfo[]) {
@@ -84,7 +84,7 @@ export function SQLPanel({
   };
 
   return (
-    <section aria-label="SQL editor" className="flex h-full min-h-0 flex-col border-t border-border bg-card">
+    <section aria-label="SQL editor" className="ducs-glass-panel flex h-full min-h-0 flex-col border-t border-border bg-card">
       <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
         <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">SQL</span>
         <Button size="sm" onClick={onRun} disabled={disabled || running || !value.trim()}>

@@ -69,7 +69,7 @@ export function SourceStateBanner({ source, job, elapsed, onCancel, onRetry, cla
 
   return (
     <div
-      className={cn("flex min-h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5", className)}
+      className={cn("ducs-glass-bar flex min-h-9 shrink-0 items-center gap-2 border-b border-border bg-card px-2.5 py-1.5", className)}
       role={state === "failed" ? "alert" : "status"}
       aria-live="polite"
       aria-busy={details.active}

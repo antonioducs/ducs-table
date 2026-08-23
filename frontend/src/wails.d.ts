@@ -28,6 +28,17 @@ import type {
   UpdateConnectionInput,
   WorkbookSheets,
   XLSXImportRequest,
+  AIApprovalResponse,
+  AIConfig,
+  AIConversation,
+  AIConversationDetail,
+  AIConversationRequest,
+  AICreateConversationRequest,
+  AIModel,
+  AIProviderStatus,
+  AIRun,
+  AISendRequest,
+  AIStopRequest,
 } from "@/types";
 
 declare global {
@@ -77,12 +88,27 @@ declare global {
           GetExternalRelation(request: { projectId: string; id: string }): Promise<ExternalRelationInfo>;
           SnapshotExternalRelation(request: { projectId: string; relationId: string; displayName?: string; sqlName?: string }): Promise<Job>;
           RefreshSnapshot(request: { projectId: string; sourceId: string }): Promise<Job>;
+
+          AIGetConfig(projectId: string): Promise<AIConfig>;
+          AIProviderStatus(provider: string): Promise<AIProviderStatus>;
+          AIProviderLogin(provider: string): Promise<unknown>;
+          AIProviderLogout(provider: string): Promise<void>;
+          AIProviderListModels(provider: string): Promise<AIModel[]>;
+          AIListModels(provider: string): Promise<AIModel[]>;
+          AIListConversations(projectId: string): Promise<AIConversation[]>;
+          AICreateConversation(request: AICreateConversationRequest): Promise<AIConversation>;
+          AIGetConversation(request: AIConversationRequest): Promise<AIConversationDetail>;
+          AIDeleteConversation(request: AIConversationRequest): Promise<void>;
+          AISend(request: AISendRequest): Promise<AIRun>;
+          AIStop(request: AIStopRequest): Promise<AIRun>;
+          AIRespondApproval(request: AIApprovalResponse): Promise<void>;
         };
       };
     };
     runtime?: {
       EventsOn?(eventName: string, callback: (payload: unknown) => void): (() => void) | void;
       EventsOff?(eventName: string): void;
+      BrowserOpenURL?(url: string): void;
     };
     wails?: {
       Callback?(message: string): void;

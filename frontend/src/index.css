@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #080b09;
-  --color-foreground: #eef6f1;
-  --color-card: #0d120f;
-  --color-card-foreground: #eef6f1;
-  --color-popover: #0d120f;
-  --color-popover-foreground: #eef6f1;
-  --color-primary: #32e67e;
-  --color-primary-foreground: #041009;
-  --color-primary-hover: #50ef94;
-  --color-secondary: #141c18;
-  --color-secondary-foreground: #dce9e1;
-  --color-muted: #101713;
-  --color-muted-foreground: #8d9c94;
-  --color-accent: #17231d;
-  --color-accent-foreground: #dff9e9;
-  --color-border: #223029;
-  --color-input: #1b2822;
-  --color-ring: #32e67e;
-  --color-destructive: #ef6464;
-  --color-warning: #e4b95e;
+  --color-background: rgb(7 7 9 / 92%);
+  --color-foreground: #f4f4f5;
+  --color-card: rgb(17 17 20 / 76%);
+  --color-card-foreground: #f4f4f5;
+  --color-popover: rgb(20 20 24 / 94%);
+  --color-popover-foreground: #f4f4f5;
+  --color-primary: #7364df;
+  --color-primary-foreground: #ffffff;
+  --color-primary-hover: #7464dc;
+  --color-secondary: rgb(31 31 36 / 88%);
+  --color-secondary-foreground: #e6e6e9;
+  --color-muted: rgb(22 22 26 / 80%);
+  --color-muted-foreground: #92929d;
+  --color-accent: rgb(38 38 44 / 86%);
+  --color-accent-foreground: #fafafa;
+  --color-border: rgb(255 255 255 / 9%);
+  --color-input: rgb(255 255 255 / 14%);
+  --color-ring: #9688ff;
+  --color-destructive: #f87171;
+  --color-warning: #f5c768;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
@@ -29,15 +29,19 @@
 :root {
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
-  background: #080b09;
-  color: #eef6f1;
+  --glass-surface: rgb(16 16 20 / 72%);
+  --glass-surface-strong: rgb(19 19 23 / 90%);
+  --glass-line: rgb(255 255 255 / 9%);
+  --glass-highlight: rgb(255 255 255 / 4%);
+  background: #060608;
+  color: #f4f4f5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
 * {
   box-sizing: border-box;
-  border-color: #223029;
+  border-color: rgb(255 255 255 / 9%);
 }
 
 html,
@@ -50,8 +54,11 @@ body,
 }
 
 body {
-  background: #080b09;
-  color: #eef6f1;
+  background:
+    radial-gradient(circle at 8% -12%, rgb(106 117 176 / 20%), transparent 34rem),
+    radial-gradient(circle at 94% 112%, rgb(112 81 177 / 10%), transparent 38rem),
+    #060608;
+  color: #f4f4f5;
   font-size: 13px;
   user-select: none;
 }
@@ -67,12 +74,35 @@ button,
 input,
 textarea,
 [tabindex] {
-  outline-color: #32e67e;
+  outline-color: #9688ff;
 }
 
 ::selection {
-  color: #eef6f1;
-  background: rgb(50 230 126 / 28%);
+  color: #ffffff;
+  background: rgb(139 124 246 / 30%);
+}
+
+.ai-markdown p + p,
+.ai-markdown ul + p,
+.ai-markdown ol + p,
+.ai-markdown p + ul,
+.ai-markdown p + ol {
+  margin-top: 0.5rem;
+}
+
+.ai-markdown ul,
+.ai-markdown ol {
+  margin-left: 1rem;
+  list-style: revert;
+}
+
+.ai-markdown pre:has(> code) {
+  margin: 0.5rem 0;
+  overflow: auto;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: rgb(5 5 7 / 70%);
 }
 
 ::-webkit-scrollbar {
@@ -81,18 +111,20 @@ textarea,
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0f0c;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   min-height: 30px;
-  border: 2px solid #0a0f0c;
+  border: 2px solid transparent;
   border-radius: 999px;
-  background: #26382f;
+  background: #303038;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #345244;
+  background: #45454f;
+  background-clip: padding-box;
 }
 
 .font-mono,
@@ -103,31 +135,63 @@ pre {
 
 .ducs-shell {
   --wails-drop-target: drop;
+  position: relative;
+  isolation: isolate;
   width: 100%;
   height: 100%;
   min-width: 1080px;
   min-height: 680px;
-  background: #080b09;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(94 106 164 / 16%), transparent 32rem),
+    radial-gradient(circle at 100% 100%, rgb(115 85 174 / 8%), transparent 40rem),
+    #070709;
+}
+
+.ducs-glass-bar,
+.ducs-glass-panel {
+  background:
+    linear-gradient(180deg, var(--glass-highlight), transparent 55%),
+    var(--glass-surface);
+  -webkit-backdrop-filter: blur(22px) saturate(130%);
+  backdrop-filter: blur(22px) saturate(130%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.ducs-glass-bar {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 5%), transparent 72%),
+    rgb(15 15 18 / 82%);
+}
+
+.ducs-glass-popover {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 6%), transparent 40%),
+    var(--glass-surface-strong);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 5%),
+    0 22px 60px rgb(0 0 0 / 58%);
 }
 
 .ducs-grid.ag-theme-quartz-dark,
 .ducs-grid.ag-theme-quartz {
-  --ag-background-color: #0a0f0c;
-  --ag-foreground-color: #dce9e1;
-  --ag-header-background-color: #101713;
-  --ag-header-foreground-color: #c9d8cf;
-  --ag-border-color: #223029;
-  --ag-secondary-border-color: #18231d;
-  --ag-row-border-color: #18231d;
-  --ag-odd-row-background-color: #0b100d;
-  --ag-row-hover-color: rgb(50 230 126 / 6%);
-  --ag-selected-row-background-color: rgb(50 230 126 / 12%);
-  --ag-input-focus-border-color: #32e67e;
-  --ag-range-selection-border-color: #32e67e;
-  --ag-checkbox-checked-color: #32e67e;
-  --ag-accent-color: #32e67e;
-  --ag-icon-color: #8d9c94;
-  --ag-header-column-resize-handle-color: #345244;
+  --ag-background-color: #0a0a0d;
+  --ag-foreground-color: #dedee4;
+  --ag-header-background-color: #121216;
+  --ag-header-foreground-color: #c6c6ce;
+  --ag-border-color: rgb(255 255 255 / 9%);
+  --ag-secondary-border-color: rgb(255 255 255 / 6%);
+  --ag-row-border-color: rgb(255 255 255 / 6%);
+  --ag-odd-row-background-color: #0d0d10;
+  --ag-row-hover-color: rgb(139 124 246 / 7%);
+  --ag-selected-row-background-color: rgb(139 124 246 / 13%);
+  --ag-input-focus-border-color: #8b7cf6;
+  --ag-range-selection-border-color: #8b7cf6;
+  --ag-checkbox-checked-color: #8b7cf6;
+  --ag-accent-color: #8b7cf6;
+  --ag-icon-color: #8d8d98;
+  --ag-header-column-resize-handle-color: #3d3d47;
   --ag-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
   --ag-font-size: 12px;
   --ag-grid-size: 5px;
@@ -139,16 +203,16 @@ pre {
 
 .ducs-grid .ag-root-wrapper {
   border: 0;
-  background: #0a0f0c;
+  background: #0a0a0d;
 }
 
 .ducs-grid .ag-header {
-  border-bottom: 1px solid #223029;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
 }
 
 .ducs-grid .ag-header-cell,
 .ducs-grid .ag-cell {
-  border-right: 1px solid #18231d;
+  border-right: 1px solid rgb(255 255 255 / 6%);
 }
 
 .ducs-grid .ag-cell {
@@ -159,22 +223,24 @@ pre {
 
 .ducs-grid .ag-cell-focus,
 .ducs-grid .ag-cell-range-selected {
-  border-color: #32e67e !important;
+  border-color: #8b7cf6 !important;
 }
 
 .ducs-grid .ag-overlay-no-rows-center,
 .ducs-grid .ag-overlay-loading-center {
-  border: 1px solid #223029;
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 8px;
-  background: #0d120f;
-  color: #8d9c94;
-  box-shadow: none;
+  background: rgb(18 18 22 / 86%);
+  color: #92929d;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
 }
 
 .cm-editor {
   height: 100%;
-  background: #0a0f0c !important;
-  color: #dce9e1;
+  background: rgb(8 8 11 / 88%) !important;
+  color: #dedee4;
   font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
@@ -188,23 +254,23 @@ pre {
 }
 
 .cm-gutters {
-  border-right: 1px solid #18231d !important;
-  background: #0d120f !important;
-  color: #56675e !important;
+  border-right: 1px solid rgb(255 255 255 / 6%) !important;
+  background: rgb(14 14 18 / 82%) !important;
+  color: #5f5f6b !important;
 }
 
 .cm-activeLine,
 .cm-activeLineGutter {
-  background: rgb(50 230 126 / 5%) !important;
+  background: rgb(139 124 246 / 6%) !important;
 }
 
 .cm-cursor {
-  border-left-color: #32e67e !important;
+  border-left-color: #8b7cf6 !important;
 }
 
 .cm-selectionBackground,
 .cm-content ::selection {
-  background: rgb(50 230 126 / 20%) !important;
+  background: rgb(139 124 246 / 22%) !important;
 }
 
 @keyframes ducs-pulse {
@@ -226,4 +292,3 @@ pre {
     transition-duration: 0.01ms !important;
   }
 }
-

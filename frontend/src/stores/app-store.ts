@@ -21,6 +21,8 @@ export interface PanelState {
   sidebarSize: number;
   sqlSize: number;
   sqlCollapsed: boolean;
+  aiSize: number;
+  aiCollapsed: boolean;
 }
 
 export interface ExternalCatalogState {
@@ -94,7 +96,7 @@ export interface AppState {
   reset: () => void;
 }
 
-const initialPanel: PanelState = { sidebarSize: 19, sqlSize: 29, sqlCollapsed: false };
+const initialPanel: PanelState = { sidebarSize: 19, sqlSize: 29, sqlCollapsed: false, aiSize: 28, aiCollapsed: true };
 
 export function createEmptyProjectSession(): ProjectSession {
   return { version: 1, sqlDraft: "", tabs: [], history: [], resultSequence: 0 };
@@ -601,7 +603,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({ panel: state.panel }) as AppState,
       merge: (persisted, current) => {
         const saved = persisted as Partial<AppState>;
-        return { ...current, panel: saved.panel ?? current.panel };
+        return { ...current, panel: { ...current.panel, ...saved.panel } };
       },
     },
   ),

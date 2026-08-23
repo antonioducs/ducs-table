@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:app-dist
@@ -29,6 +30,16 @@ func main() {
 		},
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "com.wails.ducs-table",
+			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
+				if app.ctx == nil {
+					return
+				}
+				runtime.WindowShow(app.ctx)
+				runtime.WindowUnminimise(app.ctx)
+			},
+		},
 		ErrorFormatter: func(err error) any {
 			return models.AsAppError(err)
 		},

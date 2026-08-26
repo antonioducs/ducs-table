@@ -14,9 +14,16 @@ const saved = new Map<string, string>();
 function snapshot(session: ProjectSession): ProjectSession {
   return {
     ...session,
+    documents: session.documents.map((document) => ({ ...document })),
     tabs: session.tabs.map((tab) => ({ ...tab })),
+    groups: session.groups.map((group) => ({ ...group, tabIds: [...group.tabIds] })),
+    layout: structuredCloneLayout(session.layout),
     history: session.history.map((entry) => ({ ...entry })).slice(0, 20),
   };
+}
+
+function structuredCloneLayout(node: ProjectSession["layout"]): ProjectSession["layout"] {
+  return node.children ? { ...node, children: node.children.map(structuredCloneLayout) } : { ...node };
 }
 
 export function markProjectSessionSaved(projectId: string, session: ProjectSession): void {

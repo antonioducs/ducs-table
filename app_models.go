@@ -111,6 +111,12 @@ type SaveQueryRequest struct {
 	SQL       string `json:"sql"`
 }
 
+type RenameSourceRequest struct {
+	ProjectID   string `json:"projectId"`
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+}
+
 type ExportRequest struct {
 	ProjectID      string                 `json:"projectId"`
 	Resource       models.GridResourceRef `json:"resource"`

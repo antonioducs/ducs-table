@@ -74,6 +74,45 @@ func TestJobFailureSnapshot(t *testing.T) {
 	}
 }
 
+func TestSuccessfulTaskWinsCancellationRace(t *testing.T) {
+	manager := NewManager(1, nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	snapshot, err := manager.Submit(Metadata{ProjectID: "project-a", Kind: "import"}, func(context.Context, Reporter) (any, error) {
+		close(started)
+		<-release
+		return "committed", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if cancelled, err := manager.Cancel(snapshot.ID); err != nil || cancelled.State != StateCancelled {
+		t.Fatalf("cancel result = %+v, %v", cancelled, err)
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		final, err := manager.Get(snapshot.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if final.State == StateCompleted {
+			if final.Result != "committed" {
+				t.Fatalf("result = %#v", final.Result)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("successful task remained in %s", final.State)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := manager.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWaitReturnsResultAndIsRepeatable(t *testing.T) {
 	manager := NewManager(1, nil)
 	snapshot, err := manager.Submit(Metadata{ProjectID: "project-a", Kind: "query", Label: "Smoke query", SourceID: "source-id"}, func(context.Context, Reporter) (any, error) {

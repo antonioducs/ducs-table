@@ -6,6 +6,8 @@ Local files, imported tables, snapshots, saved SQL, materialized query results, 
 
 Passwords are stored exclusively in macOS Keychain and are never written to the workspace database, browser storage, events, or application logs. If Keychain is unavailable, the app does not fall back to a plaintext or locally encrypted credential file.
 
+The private local `app.log` records bounded structured diagnostics such as operation/source IDs, source filename/type/size, processing stage, duration, outcome, and sanitized error categories. File row contents, query/result payloads, passwords, tokens, credential-bearing URIs, and raw source paths embedded in driver errors are redacted. The log rotates at 5 MiB and retains three local backups; it is never uploaded automatically.
+
 Connections are global and may be linked to multiple projects without duplicating their configuration or Keychain item. Removing a link does not delete or disconnect the connection. Deleting a connection everywhere removes its metadata, credential, and project links but preserves local snapshots.
 
 The app performs network access only when the user:

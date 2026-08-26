@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"ducs-table/internal/models"
@@ -19,5 +20,20 @@ func TestWorkspaceOpenErrorPreservesOtherFailures(t *testing.T) {
 	original := errors.New("disk is unavailable")
 	if got := workspaceOpenError(original); got != original {
 		t.Fatalf("non-lock error changed: %v", got)
+	}
+}
+
+func TestDroppedFilePathsRejectsInternalHTMLDrags(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "orders.csv")
+	second := filepath.Join(t.TempDir(), "customers.csv")
+	got := droppedFilePaths([]string{"", "   ", "tab-orders", first, first, second})
+	want := []string{first, second}
+	if len(got) != len(want) {
+		t.Fatalf("dropped paths = %#v, want %#v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("dropped paths = %#v, want %#v", got, want)
+		}
 	}
 }

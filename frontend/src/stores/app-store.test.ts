@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { preserveWorkspaceMutations, selectActiveSource, selectProjectJobs, useAppStore } from "./app-store";
-import type { ConnectionInfo, ExternalRelationInfo, Job, Project, ProjectWorkspace, SourceInfo } from "@/types";
+import { createEmptyProjectSession, preserveWorkspaceMutations, selectActiveSource, selectProjectJobs, useAppStore } from "./app-store";
+import { focusedDocumentId } from "@/lib/workbench";
+import type { ConnectionInfo, ExternalRelationInfo, Job, Project, ProjectWorkspace, SavedQuery, SourceInfo } from "@/types";
 
 const project = (id: string, name = id): Project => ({
   id, name, description: "", lastOpenedAt: `2026-08-2${id === "p1" ? "1" : "0"}T12:00:00Z`, createdAt: "2026-08-20T12:00:00Z", updatedAt: "2026-08-20T12:00:00Z",
@@ -38,8 +39,18 @@ const workspace = (value: Project, sources: SourceInfo[] = []): ProjectWorkspace
   sources,
   savedQueries: [],
   connections: [],
-  session: { version: 1, sqlDraft: "", tabs: [], history: [], resultSequence: 0 },
+  session: createEmptyProjectSession(),
 });
+
+const draftOf = (projectId: string): string | undefined => {
+  const session = useAppStore.getState().projectWorkspaces[projectId]?.session;
+  return session ? session.documents.find((document) => document.id === focusedDocumentId(session))?.sql : undefined;
+};
+
+const activeTabIdOf = (projectId: string): string | undefined => {
+  const session = useAppStore.getState().projectWorkspaces[projectId]?.session;
+  return session?.groups.find((group) => group.id === session.activeGroupId)?.activeTabId;
+};
 
 describe("normalized project store", () => {
   beforeEach(() => {
@@ -64,10 +75,10 @@ describe("normalized project store", () => {
     const current = useAppStore.getState();
     expect(current.projectWorkspaces.p1.sourceIds).toEqual(["one"]);
     expect(current.projectWorkspaces.p2.sourceIds).toEqual(["two"]);
-    expect(current.projectWorkspaces.p1.session.sqlDraft).toBe("select 1");
-    expect(current.projectWorkspaces.p2.session.sqlDraft).toBe("select 2");
+    expect(draftOf("p1")).toBe("select 1");
+    expect(draftOf("p2")).toBe("select 2");
     expect(current.projectWorkspaces.p1.session.tabs[0].kind).toBe("local");
-    expect(current.projectWorkspaces.p2.session.tabs).toEqual([]);
+    expect(current.projectWorkspaces.p2.session.tabs.map((tab) => tab.kind)).toEqual(["sql"]);
     expect(current.projectWorkspaces.p1.session.history).toHaveLength(1);
     expect(current.nextResultName("p1")).toBe("Result 1");
     expect(current.nextResultName("p2")).toBe("Result 1");
@@ -78,6 +89,21 @@ describe("normalized project store", () => {
     const history = useAppStore.getState().projectWorkspaces.p1.session.history;
     expect(history).toHaveLength(20);
     expect(history[0].sql).toBe("select 24");
+  });
+
+  it("keeps an open saved-query tab in sync when the query is renamed", () => {
+    const saved: SavedQuery = { projectId: "p1", id: "saved-1", name: "Old name", sql: "select 42" };
+    useAppStore.getState().upsertSavedQuery("p1", saved);
+    useAppStore.getState().loadSavedQuery("p1", saved.id);
+
+    useAppStore.getState().upsertSavedQuery("p1", { ...saved, name: "New name" });
+
+    const current = useAppStore.getState().projectWorkspaces.p1;
+    const document = current.session.documents.find((item) => item.savedQueryId === saved.id);
+    const tab = current.session.tabs.find((item) => item.documentId === document?.id);
+    expect(current.savedQueriesById[saved.id].name).toBe("New name");
+    expect(document).toMatchObject({ title: "New name", sql: "select 42" });
+    expect(tab?.title).toBe("New name");
   });
 
   it("rejects a mismatched workspace response without changing the active project", () => {
@@ -91,8 +117,9 @@ describe("normalized project store", () => {
     useAppStore.getState().upsertSource("p2", source("p2", "background"));
     useAppStore.getState().openTab("p2", "background");
     expect(useAppStore.getState().activeProjectId).toBe(before);
-    expect(useAppStore.getState().projectWorkspaces.p1.session.activeTabId).toBeUndefined();
-    expect(useAppStore.getState().projectWorkspaces.p2.session.activeTabId).toBeUndefined();
+    // Background projects still park the tab, but nothing in p1 becomes active.
+    expect(activeTabIdOf("p1")).toBeUndefined();
+    expect(useAppStore.getState().projectWorkspaces.p2.session.tabs).toHaveLength(1);
     expect(selectActiveSource(useAppStore.getState())).toBeUndefined();
   });
 
@@ -120,10 +147,22 @@ describe("normalized project store", () => {
   it("never stores preview rows and does not downgrade a ready source", () => {
     useAppStore.getState().upsertSource("p1", source("p1"));
     useAppStore.getState().upsertSource("p1", { ...source("p1"), status: "preparing", previewRows: [{ customer_id: 1 }] });
+    useAppStore.getState().upsertSource("p1", { ...source("p1"), status: "cancelled" });
     const stored = useAppStore.getState().projectWorkspaces.p1.sourcesById["customers-id"];
     expect(stored.status).toBe("ready");
     expect(stored.previewRows).toBeUndefined();
     expect(JSON.stringify(useAppStore.getState())).not.toContain("customer_id\":1");
+  });
+
+  it("does not let a stale preview overwrite failed or cancelled import state", () => {
+    const preparing = { ...source("p1", "racing-import"), status: "preparing" as const, rowCount: null };
+    useAppStore.getState().upsertSource("p1", { ...preparing, status: "failed", error: { message: "Import failed" } });
+    useAppStore.getState().upsertSource("p1", preparing);
+    expect(useAppStore.getState().projectWorkspaces.p1.sourcesById["racing-import"].status).toBe("failed");
+
+    useAppStore.getState().upsertSource("p1", { ...preparing, id: "cancelled-import", status: "cancelled" });
+    useAppStore.getState().upsertSource("p1", { ...preparing, id: "cancelled-import" });
+    expect(useAppStore.getState().projectWorkspaces.p1.sourcesById["cancelled-import"].status).toBe("cancelled");
   });
 
   it("hydrates external placeholders without mixing local tabs", () => {
@@ -152,10 +191,12 @@ describe("normalized project store", () => {
     useAppStore.getState().setGlobalConnections([connection]);
     useAppStore.getState().setDraft("p1", "select secret_value");
     useAppStore.getState().upsertSource("p1", source("p1"));
-    useAppStore.getState().setPanel({ sqlCollapsed: true, aiCollapsed: false, aiSize: 31 });
+    useAppStore.getState().setPanel({ sidebarCollapsed: true, aiCollapsed: false, aiSize: 31 });
     const persisted = localStorage.getItem("ducs-table:layout:v2") ?? "";
-    expect(persisted).toContain("sqlCollapsed");
+    expect(persisted).toContain("sidebarCollapsed");
     expect(persisted).toContain("aiSize");
+    // The workbench layout now lives in the per-project session, not localStorage.
+    expect(persisted).not.toContain("layout");
     expect(persisted).not.toContain("db.internal");
     expect(persisted).not.toContain("select secret_value");
     expect(persisted).not.toContain("customers-id");

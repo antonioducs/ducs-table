@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bridge, normalizeAIConfig, normalizeAIConversation, normalizeAIMessage, normalizeAIModel, normalizeAIProviderStatus, normalizeAIRun, normalizePreviewSource, normalizeProjectSession, normalizeProjectWorkspace, normalizeSource } from "./bridge";
+import { bridge, normalizeAIConfig, normalizeAIConversation, normalizeAIMessage, normalizeAIModel, normalizeAIProviderStatus, normalizeAIRun, normalizeAppError, normalizePreviewSource, normalizeProjectSession, normalizeProjectWorkspace, normalizeSource } from "./bridge";
 
 afterEach(() => {
   delete window.go;
@@ -7,6 +7,45 @@ afterEach(() => {
 });
 
 describe("project bridge normalization", () => {
+  it("preserves actionable AppError details from either JSON naming convention", () => {
+    expect(normalizeAppError({
+      Code: "IMPORT_FAILED",
+      Message: "The workbook could not be read.",
+      Details: { stage: "Opening workbook", suggestion: "Close the file and retry.", errorRef: "2ac47cf0-2d97-4ad0-863c-b625ea15d056", logPath: "/tmp/ducs.log" },
+    })).toEqual({
+      code: "IMPORT_FAILED",
+      message: "The workbook could not be read.",
+      details: { stage: "Opening workbook", suggestion: "Close the file and retry.", errorRef: "2ac47cf0-2d97-4ad0-863c-b625ea15d056", logPath: "/tmp/ducs.log" },
+    });
+  });
+
+  it("normalizes AppError details on both import failure events", () => {
+    const handlers: Record<string, (payload: unknown) => void> = {};
+    Object.defineProperty(window, "runtime", { configurable: true, value: { EventsOn: (name: string, callback: (payload: unknown) => void) => { handlers[name] = callback; } } });
+    const datasetFailed = vi.fn();
+    const jobUpdated = vi.fn();
+    bridge.on("ducs:dataset-failed", datasetFailed);
+    bridge.on("ducs:job-updated", jobUpdated);
+    const error = { code: "IMPORT_FAILED", message: "Invalid CSV row.", details: { suggestion: "Retry with malformed rows skipped.", errorRef: "90f1928e-acde" } };
+
+    handlers["ducs:dataset-failed"]({ projectId: "project-1", sourceId: "source-1", error });
+    handlers["ducs:job-updated"]({ projectId: "project-1", sourceId: "source-1", id: "job-1", kind: "import", state: "failed", error });
+
+    expect(datasetFailed).toHaveBeenCalledWith(expect.objectContaining({ error: expect.objectContaining({ details: error.details }) }));
+    expect(jobUpdated).toHaveBeenCalledWith(expect.objectContaining({ error: expect.objectContaining({ details: error.details }) }));
+  });
+
+  it("drops blank paths from native file-drop events", () => {
+    const handlers: Record<string, (payload: unknown) => void> = {};
+    Object.defineProperty(window, "runtime", { configurable: true, value: { EventsOn: (name: string, callback: (payload: unknown) => void) => { handlers[name] = callback; } } });
+    const dropped = vi.fn();
+    bridge.on("ducs:file-drop", dropped);
+
+    handlers["ducs:file-drop"]({ paths: ["", "   ", "/tmp/orders.csv"] });
+
+    expect(dropped).toHaveBeenCalledWith({ projectId: undefined, paths: ["/tmp/orders.csv"] });
+  });
+
   it("maps backend SourceInfo fields while keeping preview rows transient", () => {
     const source = normalizeSource({
       id: "source-1", projectId: "project-1", displayName: "Orders", sqlName: "orders", sourceType: "csv", rowCount: 4, isEphemeral: false,
@@ -19,15 +58,25 @@ describe("project bridge normalization", () => {
 
   it("sanitizes backend sessions and preloads external workspace catalogs", () => {
     const session = normalizeProjectSession({
-      version: 1,
-      sqlDraft: "select 1",
-      tabs: [{ id: "external:one", kind: "external", relationId: "one", title: "Orders" }],
-      activeTabId: "missing",
+      version: 2,
+      documents: [{ id: "doc-1", title: "Query 1", sql: "select 1" }],
+      tabs: [
+        { id: "external:one", kind: "external", relationId: "one", title: "Orders" },
+        { id: "sql:one", kind: "sql", title: "Query 1", documentId: "doc-1" },
+      ],
+      groups: [{ id: "group-a", tabIds: ["external:one"], activeTabId: "missing" }],
+      layout: { kind: "split", direction: "vertical", children: [{ kind: "group", groupId: "group-a" }, { kind: "group", groupId: "gone" }] },
+      activeGroupId: "gone",
       history: Array.from({ length: 24 }, (_, index) => ({ id: String(index), sql: `select ${index}`, ranAt: "", status: "success" as const })),
       resultSequence: 2,
     });
     expect(session.history).toHaveLength(20);
-    expect(session.activeTabId).toBeUndefined();
+    // Unknown groups are dropped and the orphan SQL tab is adopted so nothing is lost.
+    expect(session.groups).toHaveLength(1);
+    expect(session.groups[0].tabIds).toEqual(["external:one", "sql:one"]);
+    expect(session.groups[0].activeTabId).toBe("sql:one");
+    expect(session.layout).toEqual({ kind: "group", groupId: "group-a", size: 100 });
+    expect(session.activeGroupId).toBe("group-a");
 
     const workspace = normalizeProjectWorkspace({
       project: { id: "project-1", name: "Analytics", description: "", lastOpenedAt: "", createdAt: "", updatedAt: "" },

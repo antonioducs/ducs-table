@@ -85,6 +85,33 @@ func TestPreviewAndMaterializeSupportedTextFormats(t *testing.T) {
 	}
 }
 
+func TestHeaderOnlyCSVCompletesWithZeroRows(t *testing.T) {
+	db, _, projectID := openImporterTestDB(t)
+	path := filepath.Join(t.TempDir(), "header-only.csv")
+	if err := os.WriteFile(path, []byte("id,name\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	service := New(db)
+
+	preview, err := service.Preview(ctx, path, Options{}, "", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Columns) != 2 || len(preview.Rows) != 0 {
+		t.Fatalf("header-only preview = %d columns, %d rows", len(preview.Columns), len(preview.Rows))
+	}
+
+	source, err := service.Materialize(ctx, MaterializeRequest{ProjectID: projectID, Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(source.Columns) != 2 || source.RowCount != 0 {
+		t.Fatalf("header-only source = %d columns, %d rows", len(source.Columns), source.RowCount)
+	}
+}
+
 func TestValidationErrorsAndStagingCleanup(t *testing.T) {
 	db, _, projectID := openImporterTestDB(t)
 	service := New(db)
@@ -102,8 +129,13 @@ func TestValidationErrorsAndStagingCleanup(t *testing.T) {
 	if err := os.WriteFile(broken, []byte(`[{"not": "closed"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Materialize(context.Background(), MaterializeRequest{ProjectID: projectID, Path: broken}); err == nil {
+	_, brokenErr := service.Materialize(context.Background(), MaterializeRequest{ProjectID: projectID, Path: broken})
+	if brokenErr == nil {
 		t.Fatal("broken JSON unexpectedly imported")
+	}
+	var brokenAppErr *models.AppError
+	if !errors.As(brokenErr, &brokenAppErr) || brokenAppErr.Code != models.CodeImportReadFailed || brokenAppErr.Details["stage"] != stageRead {
+		t.Fatalf("broken JSON error = %#v, want read-stage failure", brokenErr)
 	}
 	var staging int
 	if err := db.SQL().QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'data' AND table_name LIKE '__staging_%'`).Scan(&staging); err != nil {

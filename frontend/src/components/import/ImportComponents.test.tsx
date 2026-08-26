@@ -67,6 +67,28 @@ describe("import presentation", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("shows the actionable failure message, short reference, and log location", () => {
+    const failed = source("failed");
+    failed.error = {
+      message: "A quoted CSV field is incomplete.",
+      details: {
+        stage: "Reading CSV rows",
+        suggestion: "Check the quote settings and retry.",
+        errorRef: "8d146b66-f716-42d3-9c47-90e6aeb7ee10",
+        logPath: "/Users/example/Library/Logs/DUCS Table/app.log",
+      },
+    };
+    render(<SourceStateBanner source={failed} />);
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("A quoted CSV field is incomplete.");
+    expect(alert).toHaveTextContent("Check the quote settings and retry.");
+    expect(alert).toHaveTextContent("Stage: Reading CSV rows");
+    expect(alert).toHaveTextContent("Reference: 8d146b66");
+    expect(alert).toHaveTextContent("Log: /Users/example/Library/Logs/DUCS Table/app.log");
+    expect(screen.queryByText("8d146b66-f716-42d3-9c47-90e6aeb7ee10")).not.toBeInTheDocument();
+  });
+
   it("confirms one workbook sheet", () => {
     const onConfirm = vi.fn();
     render(<SheetPicker workbook={{ projectId: "project-1", path: "/tmp/book.xlsx", displayName: "book.xlsx", sheets: ["Orders", "Customers"] }} open onOpenChange={vi.fn()} onConfirm={onConfirm} />);

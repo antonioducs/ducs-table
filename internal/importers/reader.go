@@ -1,8 +1,6 @@
 package importers
 
 import (
-	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -70,12 +68,4 @@ func csvReaderAttempts(file FileInfo, options Options) ([]readerAttempt, error) 
 		attempts = append(attempts, build(true))
 	}
 	return attempts, nil
-}
-
-func readerFailure(fileType FileType, err error) error {
-	var appErr *models.AppError
-	if errors.As(err, &appErr) {
-		return appErr
-	}
-	return models.WrapError(models.CodeInvalidArgument, fmt.Sprintf("Could not read %s source", strings.ToUpper(string(fileType))), err, nil)
 }

@@ -64,6 +64,7 @@ declare global {
           ListWorkbookSheets(request: { projectId: string; path: string }): Promise<WorkbookSheets | string[]>;
           StartXLSXImport(request: XLSXImportRequest): Promise<ImportStartResult>;
           GetSource(request: { projectId: string; id: string }): Promise<SourceInfo>;
+          RenameSource(request: { projectId: string; id: string; displayName: string }): Promise<SourceInfo>;
           GetRows(request: RowsRequest): Promise<RowsResponse>;
           GetCellValue(request: GetCellValueRequest): Promise<CellValueResult | unknown>;
           CountRows(request: CountRowsRequest): Promise<CountRowsResult | number>;

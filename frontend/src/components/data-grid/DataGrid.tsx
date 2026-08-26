@@ -239,8 +239,9 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
   const [columnSearch, setColumnSearch] = useState("");
   const [columnState, setColumnState] = useState<ColumnState[]>(initialColumnState);
   const [viewState, setViewState] = useState<GridViewState>(initialView);
+  const shouldLoadRows = source.status === "ready" && source.rowCount !== 0;
   const [resolvedRowCount, setResolvedRowCount] = useState<number | null>(source.rowCount);
-  const [rowsLoading, setRowsLoading] = useState(source.status === "ready");
+  const [rowsLoading, setRowsLoading] = useState(shouldLoadRows);
   const [firstBlockLoaded, setFirstBlockLoaded] = useState(false);
   const [loadingRange, setLoadingRange] = useState({ start: 0, end: cacheBlockSize });
   const [loadingStartedAt, setLoadingStartedAt] = useState(() => Date.now());
@@ -266,13 +267,13 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
   }, [source.rowCount]);
 
   useEffect(() => {
-    setRowsLoading(source.status === "ready");
+    setRowsLoading(shouldLoadRows);
     setFirstBlockLoaded(false);
     setLoadingRange({ start: 0, end: cacheBlockSize });
     const now = Date.now();
     setLoadingStartedAt(now);
     setLoadingNow(now);
-  }, [cacheBlockSize, source.status]);
+  }, [cacheBlockSize, shouldLoadRows]);
 
   useEffect(() => {
     if (!rowsLoading) return;
@@ -651,7 +652,7 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
           <span>Preparing for fast queries…</span> <span>Previewing the first {previewRows.length} rows</span>
         </div>
       ) : null}
-      {ready && rowsLoading && !loadError ? (
+      {ready && !zeroRows && rowsLoading && !loadError ? (
         <div role="status" aria-live="polite" className="flex items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-[10px] text-muted-foreground">
           <LoaderCircle className="size-3 animate-spin text-primary" />
           <span>{loadingLabel}</span>

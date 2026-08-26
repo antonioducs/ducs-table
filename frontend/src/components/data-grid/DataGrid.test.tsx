@@ -104,6 +104,15 @@ describe("DataGrid", () => {
     });
   });
 
+  it("shows a ready zero-row source without an infinite loading state", () => {
+    render(<DataGrid source={source({ status: "ready", previewRows: undefined, rowCount: 0 })} />);
+
+    expect(screen.getByText("0 rows")).toBeInTheDocument();
+    expect(screen.getByText("No rows")).toBeInTheDocument();
+    expect(screen.queryByText(/Loading first/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+  });
+
   it("caps preparing previews at 200 rows with sorting and filters disabled", () => {
     const previewRows = Array.from({ length: 240 }, (_, index) => ({ name: `Person ${index}`, age: index }));
     render(<DataGrid source={source({ status: "preparing", previewRows, rowCount: null })} />);

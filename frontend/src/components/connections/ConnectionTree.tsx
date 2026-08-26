@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { ChevronRight, CircleOff, Copy, Database, DatabaseZap, Edit3, MoreHorizontal, Plug, PlugZap, RefreshCw, Save, Table2, Unplug } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, CircleOff, Copy, Database, DatabaseZap, Edit3, Eye, EyeOff, MoreHorizontal, Plug, PlugZap, RefreshCw, Save, Search, Table2, Unplug, X } from "lucide-react";
 import type { ConnectionInfo, ExternalRelationInfo } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export type ConnectionTreeProps = {
@@ -28,8 +29,46 @@ export type ConnectionTreeProps = {
 };
 
 export function ConnectionTree(props: ConnectionTreeProps) {
+  const { connections, onExpandConnection, onExpandSchema, relationsBySchema, schemasByConnection } = props;
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
+  const [hiddenSchemas, setHiddenSchemas] = useState<Set<string>>(new Set());
+  const [tableFilter, setTableFilter] = useState("");
+  const requestedConnections = useRef<Set<string>>(new Set());
+  const requestedSchemas = useRef<Set<string>>(new Set());
+  const normalizedFilter = tableFilter.trim().toLocaleLowerCase();
+
+  useEffect(() => {
+    if (!normalizedFilter) {
+      requestedConnections.current.clear();
+      requestedSchemas.current.clear();
+      return;
+    }
+    for (const connection of connections) {
+      const schemas = schemasByConnection[connection.id];
+      if (!schemas) {
+        if (!requestedConnections.current.has(connection.id)) {
+          requestedConnections.current.add(connection.id);
+          onExpandConnection(connection);
+        }
+        continue;
+      }
+      for (const schema of schemas) {
+        const key = `${connection.id}:${schema}`;
+        if (relationsBySchema[key] || requestedSchemas.current.has(key)) continue;
+        requestedSchemas.current.add(key);
+        onExpandSchema(connection, schema);
+      }
+    }
+  }, [connections, normalizedFilter, onExpandConnection, onExpandSchema, relationsBySchema, schemasByConnection]);
+
+  const hiddenSchemaItems = useMemo(() => [...hiddenSchemas].flatMap((key) => {
+    const separator = key.indexOf(":");
+    const connectionId = key.slice(0, separator);
+    const schema = key.slice(separator + 1);
+    const connection = connections.find((item) => item.id === connectionId);
+    return connection ? [{ key, label: `${connection.name}.${schema}` }] : [];
+  }), [connections, hiddenSchemas]);
 
   const toggleConnection = (connection: ConnectionInfo) => {
     const next = new Set(expandedConnections);
@@ -41,18 +80,64 @@ export function ConnectionTree(props: ConnectionTreeProps) {
     if (next.has(key)) next.delete(key); else { next.add(key); props.onExpandSchema(connection, schema); }
     setExpandedSchemas(next);
   };
+  const hideSchema = (connection: ConnectionInfo, schema: string) => {
+    const key = `${connection.id}:${schema}`;
+    setHiddenSchemas((current) => new Set(current).add(key));
+    setExpandedSchemas((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  };
+  const showSchema = (key: string) => setHiddenSchemas((current) => {
+    const next = new Set(current);
+    next.delete(key);
+    return next;
+  });
 
   if (!props.connections.length) return <p className="px-3 py-2 text-[10px] leading-4 text-muted-foreground/70">Attach PostgreSQL or MongoDB to {props.projectName ?? "this project"} to browse live data</p>;
-  return <div className="pb-1">{props.connections.map((connection) => {
-    const expanded = expandedConnections.has(connection.id);
+  return <div className="pb-1">
+    <div className="flex items-center gap-1.5 px-2 pb-2">
+      <div className="relative min-w-0 flex-1">
+        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input
+          type="search"
+          value={tableFilter}
+          onChange={(event) => setTableFilter(event.target.value)}
+          placeholder="Search tables"
+          aria-label="Search connection tables"
+          className="h-7 pl-7 pr-7 text-[10px]"
+        />
+        {tableFilter && <Button variant="ghost" size="icon-sm" className="absolute right-1 top-1/2 size-5 -translate-y-1/2" onClick={() => setTableFilter("")} aria-label="Clear table search"><X aria-hidden="true" /></Button>}
+      </div>
+      {hiddenSchemaItems.length > 0 && <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" className="size-7 shrink-0" aria-label={`${hiddenSchemaItems.length} hidden schema${hiddenSchemaItems.length === 1 ? "" : "s"}`}>
+            <Eye className="size-3.5" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="right">
+          {hiddenSchemaItems.map((item) => <DropdownMenuItem key={item.key} onSelect={() => showSchema(item.key)}><Eye aria-hidden="true" /> Show {item.label}</DropdownMenuItem>)}
+          {hiddenSchemaItems.length > 1 && <><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => setHiddenSchemas(new Set())}><Eye aria-hidden="true" /> Show all schemas</DropdownMenuItem></>}
+        </DropdownMenuContent>
+      </DropdownMenu>}
+    </div>
+    {props.connections.map((connection) => {
+    const expanded = expandedConnections.has(connection.id) || Boolean(normalizedFilter);
     const schemas = props.schemasByConnection[connection.id];
     const loading = props.loading.has(connection.id);
+    const visibleSchemas = schemas?.filter((schema) => {
+      const key = `${connection.id}:${schema}`;
+      if (!normalizedFilter) return !hiddenSchemas.has(key);
+      const relations = props.relationsBySchema[key];
+      return !relations || relations.some((relation) => relation.name.toLocaleLowerCase().includes(normalizedFilter));
+    });
     return <div key={connection.id}>
       <div className="group mx-1 flex items-center rounded-md hover:bg-accent">
-        <Button variant="ghost" size="icon-sm" className="size-6" aria-label={`${expanded ? "Collapse" : "Expand"} ${connection.name}`} onClick={() => toggleConnection(connection)}>
+        <Button variant="ghost" size="icon-sm" className="mr-1 size-6" aria-label={`${expanded ? "Collapse" : "Expand"} ${connection.name}`} onClick={() => toggleConnection(connection)}>
           <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
         </Button>
-        <button type="button" onClick={() => toggleConnection(connection)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left">
+        <button type="button" onClick={() => toggleConnection(connection)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left">
           <DatabaseZap className={cn("size-3.5 shrink-0", connection.status === "connected" ? "text-primary" : "text-muted-foreground")} />
           <span className="min-w-0 flex-1 truncate text-[11px]">{connection.name}</span>
           {connection.kind === "mongo" && <Badge variant="warning" className="h-4 px-1 text-[8px]">Experimental</Badge>}
@@ -70,17 +155,23 @@ export function ConnectionTree(props: ConnectionTreeProps) {
         {props.errors[connection.id] && <p className="px-2 py-1.5 text-[9px] text-destructive">{props.errors[connection.id]}</p>}
         {!loading && connection.status !== "connected" && <button className="flex items-center gap-1 px-2 py-1.5 text-[9px] text-primary" onClick={() => props.onConnect(connection)}><Plug className="size-3" /> Connect to browse</button>}
         {!loading && connection.status === "connected" && schemas?.length === 0 && <p className="px-2 py-1.5 text-[9px] text-muted-foreground">No schemas found</p>}
-        {schemas?.map((schema) => {
-          const key = `${connection.id}:${schema}`; const schemaExpanded = expandedSchemas.has(key); const relations = props.relationsBySchema[key];
+        {!loading && normalizedFilter && schemas && visibleSchemas?.length === 0 && <p className="px-2 py-1.5 text-[9px] text-muted-foreground">No tables match “{tableFilter.trim()}”</p>}
+        {visibleSchemas?.map((schema) => {
+          const key = `${connection.id}:${schema}`; const relations = props.relationsBySchema[key];
+          const matchingRelations = normalizedFilter ? relations?.filter((relation) => relation.name.toLocaleLowerCase().includes(normalizedFilter)) : relations;
+          const schemaExpanded = expandedSchemas.has(key) || Boolean(normalizedFilter);
           return <div key={schema}>
-            <button type="button" onClick={() => toggleSchema(connection, schema)} className="flex h-7 w-full items-center gap-1 px-1.5 text-left text-[10px] hover:text-primary">
-              <ChevronRight className={cn("size-3 transition-transform", schemaExpanded && "rotate-90")} /><Database className="size-3 text-muted-foreground" /><span className="truncate">{schema}</span>
-            </button>
+            <div className="group/schema flex items-center rounded-md hover:bg-accent">
+              <button type="button" onClick={() => toggleSchema(connection, schema)} className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-[10px] hover:text-primary">
+                <ChevronRight className={cn("size-3 shrink-0 transition-transform", schemaExpanded && "rotate-90")} /><Database className="size-3 shrink-0 text-muted-foreground" /><span className="truncate">{schema}</span>
+              </button>
+              {!normalizedFilter && <Button variant="ghost" size="icon-sm" className="mr-1 size-5 shrink-0 opacity-0 group-hover/schema:opacity-100 group-focus-within/schema:opacity-100" onClick={() => hideSchema(connection, schema)} aria-label={`Hide schema ${schema}`}><EyeOff aria-hidden="true" /></Button>}
+            </div>
             {schemaExpanded && <div className="ml-4 border-l border-border/70 pl-1">
               {props.loading.has(key) && <p className="px-2 py-1 text-[9px] text-muted-foreground">Loading relations…</p>}
               {props.errors[key] && <p className="px-2 py-1 text-[9px] text-destructive">{props.errors[key]}</p>}
-              {!props.loading.has(key) && relations?.length === 0 && <p className="px-2 py-1 text-[9px] text-muted-foreground">No relations</p>}
-              {relations?.map((relation) => <RelationRow key={relation.id} relation={relation} active={props.activeRelationId === relation.id} {...props} />)}
+              {!props.loading.has(key) && matchingRelations?.length === 0 && <p className="px-2 py-1 text-[9px] text-muted-foreground">{normalizedFilter ? "No matching tables" : "No relations"}</p>}
+              {matchingRelations?.map((relation) => <RelationRow key={relation.id} relation={relation} active={props.activeRelationId === relation.id} {...props} />)}
             </div>}
           </div>;
         })}

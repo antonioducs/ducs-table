@@ -1,12 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { sql } from "@codemirror/lang-sql";
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
-import { AlertTriangle, Clock3, Copy, FilePlus2, Play, Save } from "lucide-react";
-import type { ExternalRelationInfo, SourceInfo } from "@/types";
+import { AlignLeft, AlertTriangle, Clock3, Copy, Play, Save } from "lucide-react";
+import { toast } from "sonner";
+import type { ExternalRelationInfo, SourceInfo, SQLDocument } from "@/types";
 import type { QueryHistoryEntry } from "@/stores/app-store";
 import { sqlCompletionOptions } from "./completion";
+import { formatDuckDBSQL } from "./sql-format";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -17,11 +19,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export type SQLPanelProps = {
-  value: string;
+export type SQLEditorTabProps = {
+  document: SQLDocument;
   onChange: (value: string) => void;
   onRun: () => void;
-  onNew: () => void;
   onSave: () => void;
   running: boolean;
   disabled?: boolean;
@@ -34,7 +35,8 @@ export type SQLPanelProps = {
 
 const editorTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "rgba(8,8,11,.88)" },
-  ".cm-content": { padding: "8px 0", caretColor: "#8b7cf6" },
+  ".cm-scroller": { overflowX: "hidden" },
+  ".cm-content": { minWidth: "0", width: "100%", padding: "8px 0", caretColor: "#8b7cf6" },
   ".cm-line": { padding: "0 10px" },
   ".cm-tooltip": { backgroundColor: "rgba(19,19,23,.96)", border: "1px solid rgba(255,255,255,.1)", backdropFilter: "blur(24px)" },
   ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "rgba(139,124,246,.16)", color: "#f4f4f5" },
@@ -50,11 +52,14 @@ function completionSource(sources: SourceInfo[], externalRelations: ExternalRela
   };
 }
 
-export function SQLPanel({
-  value,
+/**
+ * One SQL document rendered as workbench tab content. Unlike the previous fixed
+ * bottom panel, running, saving and errors are scoped to this document.
+ */
+export function SQLEditorTab({
+  document,
   onChange,
   onRun,
-  onNew,
   onSave,
   running,
   disabled = false,
@@ -63,12 +68,31 @@ export function SQLPanel({
   externalRelations = [],
   history = [],
   error,
-}: SQLPanelProps) {
+}: SQLEditorTabProps) {
+  const [formatting, setFormatting] = useState(false);
   const extensions = useMemo(() => [
     sql({ upperCaseKeywords: true }),
     autocompletion({ override: [completionSource(sources, externalRelations)] }),
+    EditorView.lineWrapping,
     editorTheme,
   ], [externalRelations, sources]);
+
+  const value = document.sql;
+
+  const onFormat = async () => {
+    if (!value.trim() || formatting) return;
+    setFormatting(true);
+    try {
+      const formatted = await formatDuckDBSQL(value);
+      if (formatted !== value) onChange(formatted);
+    } catch (error) {
+      toast.error("Could not format query", {
+        description: error instanceof Error ? error.message : "The SQL formatter rejected this query.",
+      });
+    } finally {
+      setFormatting(false);
+    }
+  };
 
   const onShortcut = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!(event.metaKey || event.ctrlKey)) return;
@@ -80,19 +104,27 @@ export function SQLPanel({
       event.preventDefault();
       event.stopPropagation();
       onSave();
+    } else if (event.shiftKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      event.stopPropagation();
+      void onFormat();
     }
   };
 
   return (
-    <section aria-label="SQL editor" className="ducs-glass-panel flex h-full min-h-0 flex-col border-t border-border bg-card">
+    <section aria-label={`SQL editor ${document.title}`} className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2">
-        <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">SQL</span>
+        <span className="mr-1 min-w-0 max-w-40 truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground" title={document.title}>
+          {document.title}
+        </span>
         <Button size="sm" onClick={onRun} disabled={disabled || running || !value.trim()}>
           <Play className={running ? "ducs-pulse" : ""} /> {running ? "Running…" : "Run"}
           <kbd className="ml-1 rounded border border-black/15 px-1 font-mono text-[9px] opacity-65">⌘↵</kbd>
         </Button>
-        <Button variant="ghost" size="sm" onClick={onNew}><FilePlus2 /> New query</Button>
-        <Button variant="ghost" size="sm" onClick={onSave}><Save /> Save query</Button>
+        <Button variant="ghost" size="sm" onClick={() => void onFormat()} disabled={running || formatting || !value.trim()} title="Format query (⌘⇧F)">
+          <AlignLeft className={formatting ? "ducs-pulse" : ""} /> {formatting ? "Formatting…" : "Format"}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onSave}><Save /> {document.savedQueryId ? "Update saved" : "Save query"}</Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm"><Clock3 /> History</Button>
@@ -113,7 +145,7 @@ export function SQLPanel({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <div className="ml-auto text-[10px] text-muted-foreground">
+        <div className="ml-auto truncate pl-2 text-[10px] text-muted-foreground">
           {disabled ? disabledReason ?? "Wait for data to become available" : `${sources.length + externalRelations.length} relation${sources.length + externalRelations.length === 1 ? "" : "s"} available`}
         </div>
       </div>
@@ -143,11 +175,11 @@ export function SQLPanel({
             foldGutter: false,
           }}
           placeholder="SELECT * FROM your_table LIMIT 100"
-          aria-label="SQL query"
+          aria-label={`SQL query ${document.title}`}
         />
       </div>
     </section>
   );
 }
 
-export default SQLPanel;
+export default SQLEditorTab;

@@ -19,6 +19,15 @@ describe("Wails error normalizer", () => {
     expect(normalized.error).toBe("[CONNECTION_FAILED] Connection timed out.");
   });
 
+  it("keeps actionable details when Wails has to turn AppError into a string", () => {
+    const normalized = JSON.parse(normalizeWailsCallbackPayload(JSON.stringify({ callbackid: "1", error: {
+      code: "IMPORT_FAILED",
+      message: "The CSV could not be parsed.",
+      details: { stage: "Reading CSV rows", suggestion: "Check the delimiter and retry.", errorRef: "7685cb64-a28c-41fa-80f7-dd52a0f3a74d", logPath: "/tmp/ducs.log" },
+    } })));
+    expect(normalized.error).toBe("[IMPORT_FAILED] The CSV could not be parsed. — Check the delimiter and retry. · Stage: Reading CSV rows · Reference: 7685cb64 · Log: /tmp/ducs.log");
+  });
+
   it("installs before the Wails callback constructs Error", () => {
     const callback=vi.fn();window.wails={Callback:callback};installWailsErrorNormalizer();
     window.wails.Callback?.(JSON.stringify({callbackid:"1",error:{code:"EXTENSION_UNAVAILABLE",message:"Extension download failed."}}));

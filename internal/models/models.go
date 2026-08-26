@@ -93,27 +93,66 @@ type Project struct {
 }
 
 const (
-	ProjectSessionVersion     = 1
+	ProjectSessionVersion   = 2
+	ProjectSessionVersionV1 = 1
+
 	ProjectTabKindLocal       = "local"
 	ProjectTabKindExternal    = "external"
 	ProjectTabKindPlaceholder = "placeholder"
+	ProjectTabKindSQL         = "sql"
+
+	ProjectLayoutKindGroup = "group"
+	ProjectLayoutKindSplit = "split"
+
+	ProjectLayoutHorizontal = "horizontal"
+	ProjectLayoutVertical   = "vertical"
 )
 
-// ProjectTabReference keeps durable local/external identity plus the small
-// display hints needed while a relation is unavailable.
+// ProjectTabReference keeps durable local/external/SQL identity plus the small
+// display hints needed while a relation is unavailable. ID is per-tab, so the
+// same source or relation can be open in more than one editor group.
 type ProjectTabReference struct {
 	ID                string `json:"id"`
-	Kind              string `json:"kind"` // local | external | placeholder
+	Kind              string `json:"kind"` // local | external | placeholder | sql
 	Title             string `json:"title,omitempty"`
 	SourceID          string `json:"sourceId,omitempty"`
 	ConnectionID      string `json:"connectionId,omitempty"`
 	RelationID        string `json:"relationId,omitempty"`
+	DocumentID        string `json:"documentId,omitempty"`
 	Catalog           string `json:"catalog,omitempty"`
 	Schema            string `json:"schema,omitempty"`
 	Relation          string `json:"relation,omitempty"`
 	RelationType      string `json:"relationType,omitempty"`
 	IsResult          bool   `json:"isResult,omitempty"`
 	PlaceholderReason string `json:"placeholderReason,omitempty"`
+}
+
+// SQLDocument is one editable query buffer. Documents live and die with their
+// SQL tab, so closing a query tab discards its draft.
+type SQLDocument struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	SQL          string    `json:"sql"`
+	SavedQueryID string    `json:"savedQueryId,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// ProjectTabGroup is one tab strip inside the workbench. Every open tab belongs
+// to exactly one group.
+type ProjectTabGroup struct {
+	ID          string   `json:"id"`
+	TabIDs      []string `json:"tabIds"`
+	ActiveTabID *string  `json:"activeTabId,omitempty"`
+}
+
+// ProjectLayoutNode is the persisted split tree. Leaves reference a tab group;
+// splits hold two or more children sized in percent of their parent.
+type ProjectLayoutNode struct {
+	Kind      string              `json:"kind"` // group | split
+	Direction string              `json:"direction,omitempty"`
+	Size      float64             `json:"size,omitempty"`
+	GroupID   string              `json:"groupId,omitempty"`
+	Children  []ProjectLayoutNode `json:"children,omitempty"`
 }
 
 // QueryHistoryEntry is one bounded, project-local execution-history item.
@@ -125,12 +164,16 @@ type QueryHistoryEntry struct {
 	Status     string    `json:"status"` // success | error
 }
 
-// ProjectSession is the versioned UI state persisted for one project.
+// ProjectSession is the versioned UI state persisted for one project. Version 2
+// replaced the single SQL draft and single tab strip with SQL documents plus a
+// tree of split editor groups.
 type ProjectSession struct {
 	Version        int                   `json:"version"`
-	SQLDraft       string                `json:"sqlDraft"`
+	Documents      []SQLDocument         `json:"documents"`
 	Tabs           []ProjectTabReference `json:"tabs"`
-	ActiveTabID    *string               `json:"activeTabId,omitempty"`
+	Groups         []ProjectTabGroup     `json:"groups"`
+	Layout         ProjectLayoutNode     `json:"layout"`
+	ActiveGroupID  string                `json:"activeGroupId,omitempty"`
 	History        []QueryHistoryEntry   `json:"history"`
 	ResultSequence int                   `json:"resultSequence"`
 }

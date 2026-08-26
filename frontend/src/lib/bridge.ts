@@ -14,7 +14,9 @@ import type {
   ImportStartResult,
   Job,
   Project,
+  ProjectLayoutNode,
   ProjectSession,
+  ProjectTabGroup,
   ProjectTabReference,
   ProjectWorkspace,
   QueryHistoryEntry,
@@ -25,6 +27,7 @@ import type {
   SaveQueryRequest,
   SaveResultAsTableRequest,
   SourceInfo,
+  SQLDocument,
   TestConnectionInput,
   UpdateConnectionInput,
   WorkbookSheets,
@@ -47,6 +50,7 @@ import type {
   AIStreamEvent,
 } from "@/types";
 import { installWailsErrorNormalizer } from "@/lib/wails-error-normalizer";
+import { createSession, normalizeSession, SESSION_VERSION } from "@/lib/workbench";
 
 type AppAPI = NonNullable<NonNullable<NonNullable<Window["go"]>["main"]>["App"]>;
 type RawObject = Record<string, unknown>;
@@ -218,14 +222,15 @@ function normalizeAIApproval(value: unknown): AIApprovalRequest {
   };
 }
 
-function errorInfo(value: unknown): AppErrorInfo | undefined {
+export function normalizeAppError(value: unknown): AppErrorInfo | undefined {
   if (!value) return undefined;
   if (typeof value === "string") return { message: value };
   const raw = object(value);
+  const details = raw.details ?? raw.Details;
   return {
-    message: string(raw.message, "An unexpected local processing error occurred."),
-    code: typeof raw.code === "string" ? raw.code : undefined,
-    details: raw.details && typeof raw.details === "object" ? raw.details as Record<string, unknown> : undefined,
+    message: string(raw.message ?? raw.Message, "An unexpected local processing error occurred."),
+    code: typeof (raw.code ?? raw.Code) === "string" ? String(raw.code ?? raw.Code) : undefined,
+    details: details && typeof details === "object" ? details as AppErrorInfo["details"] : undefined,
   };
 }
 
@@ -247,7 +252,7 @@ export function normalizeSource(value: SourceInfo | RawObject, projectId = ""): 
     isEphemeral: Boolean(raw.isEphemeral),
     columns: Array.isArray(raw.columns) ? raw.columns as SourceInfo["columns"] : [],
     previewRows: Array.isArray(raw.previewRows) ? raw.previewRows as SourceInfo["previewRows"] : undefined,
-    error: errorInfo(raw.error),
+    error: normalizeAppError(raw.error),
     originalSQL: typeof (raw.originalSQL ?? raw.originalSql) === "string"
       ? String(raw.originalSQL ?? raw.originalSql)
       : undefined,
@@ -297,7 +302,9 @@ function normalizeTab(value: unknown): ProjectTabReference | undefined {
     ? "external"
     : legacyKind === "placeholder"
       ? "placeholder"
-      : "local";
+      : legacyKind === "sql"
+        ? "sql"
+        : "local";
   return {
     id,
     kind,
@@ -305,6 +312,7 @@ function normalizeTab(value: unknown): ProjectTabReference | undefined {
     sourceId: typeof raw.sourceId === "string" ? raw.sourceId : undefined,
     relationId: typeof raw.relationId === "string" ? raw.relationId : undefined,
     connectionId: typeof raw.connectionId === "string" ? raw.connectionId : undefined,
+    documentId: typeof raw.documentId === "string" ? raw.documentId : undefined,
     catalog: typeof raw.catalog === "string" ? raw.catalog : undefined,
     schema: typeof raw.schema === "string" ? raw.schema : undefined,
     relation: typeof raw.relation === "string" ? raw.relation : undefined,
@@ -312,6 +320,50 @@ function normalizeTab(value: unknown): ProjectTabReference | undefined {
     isResult: typeof raw.isResult === "boolean" ? raw.isResult : legacyKind === "result",
     placeholderReason: raw.placeholderReason === "missing" ? "missing" : raw.placeholderReason === "disconnected" ? "disconnected" : undefined,
   };
+}
+
+function normalizeDocument(value: unknown): SQLDocument | undefined {
+  const raw = object(value);
+  const id = string(raw.id);
+  if (!id) return undefined;
+  return {
+    id,
+    title: string(raw.title, "Query"),
+    sql: string(raw.sql),
+    savedQueryId: typeof raw.savedQueryId === "string" && raw.savedQueryId ? raw.savedQueryId : undefined,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
+  };
+}
+
+function normalizeGroup(value: unknown): ProjectTabGroup | undefined {
+  const raw = object(value);
+  const id = string(raw.id);
+  if (!id) return undefined;
+  return {
+    id,
+    tabIds: Array.isArray(raw.tabIds) ? raw.tabIds.filter((tabId): tabId is string => typeof tabId === "string") : [],
+    activeTabId: typeof raw.activeTabId === "string" ? raw.activeTabId : undefined,
+  };
+}
+
+function normalizeLayout(value: unknown, depth = 0): ProjectLayoutNode | undefined {
+  if (depth > 6) return undefined;
+  const raw = object(value);
+  if (raw.kind === "split") {
+    const children = Array.isArray(raw.children)
+      ? raw.children.map((child) => normalizeLayout(child, depth + 1)).filter((child): child is ProjectLayoutNode => Boolean(child))
+      : [];
+    if (!children.length) return undefined;
+    return {
+      kind: "split",
+      direction: raw.direction === "vertical" ? "vertical" : "horizontal",
+      size: typeof raw.size === "number" ? raw.size : undefined,
+      children,
+    };
+  }
+  const groupId = typeof raw.groupId === "string" ? raw.groupId : "";
+  if (!groupId) return undefined;
+  return { kind: "group", groupId, size: typeof raw.size === "number" ? raw.size : undefined };
 }
 
 function normalizeHistory(value: unknown): QueryHistoryEntry[] {
@@ -331,18 +383,27 @@ function normalizeHistory(value: unknown): QueryHistoryEntry[] {
 
 export function normalizeProjectSession(value: ProjectSession | RawObject | undefined): ProjectSession {
   const raw = object(value);
+  const empty = createSession();
   const tabs = Array.isArray(raw.tabs) ? raw.tabs.map(normalizeTab).filter((tab): tab is ProjectTabReference => Boolean(tab)) : [];
-  const activeTabId = typeof raw.activeTabId === "string" && tabs.some((tab) => tab.id === raw.activeTabId)
-    ? raw.activeTabId
-    : undefined;
-  return {
-    version: typeof raw.version === "number" && raw.version > 0 ? Math.floor(raw.version) : 1,
-    sqlDraft: string(raw.sqlDraft),
+  const documents = Array.isArray(raw.documents)
+    ? raw.documents.map(normalizeDocument).filter((document): document is SQLDocument => Boolean(document))
+    : [];
+  const groups = Array.isArray(raw.groups)
+    ? raw.groups.map(normalizeGroup).filter((group): group is ProjectTabGroup => Boolean(group))
+    : [];
+  const layout = normalizeLayout(raw.layout);
+  // Version 1 payloads never reach the frontend (the backend migrates on load),
+  // but a session without groups still has to yield a usable workbench.
+  return normalizeSession({
+    version: SESSION_VERSION,
+    documents,
     tabs,
-    activeTabId,
+    groups: groups.length ? groups : empty.groups,
+    layout: layout ?? empty.layout,
+    activeGroupId: typeof raw.activeGroupId === "string" ? raw.activeGroupId : "",
     history: normalizeHistory(raw.history),
     resultSequence: typeof raw.resultSequence === "number" && raw.resultSequence >= 0 ? Math.floor(raw.resultSequence) : 0,
-  };
+  });
 }
 
 function normalizeSavedQuery(value: unknown, projectId: string): SavedQuery {
@@ -370,7 +431,7 @@ function normalizeJob(value: unknown, projectId = ""): Job {
     progress: typeof raw.progress === "number" ? raw.progress : undefined,
     sourceId: typeof raw.sourceId === "string" ? raw.sourceId : undefined,
     sourceName: typeof raw.sourceName === "string" ? raw.sourceName : undefined,
-    error: errorInfo(raw.error),
+    error: normalizeAppError(raw.error),
     createdAt: string(raw.createdAt),
     startedAt: typeof raw.startedAt === "string" ? raw.startedAt : undefined,
     finishedAt: typeof raw.finishedAt === "string" ? raw.finishedAt : undefined,
@@ -406,7 +467,7 @@ export function normalizeProjectWorkspace(value: ProjectWorkspace | RawObject): 
     connections: Array.isArray(raw.connections) ? raw.connections as ConnectionInfo[] : [],
     externalRelations: Array.isArray(raw.externalRelations) ? raw.externalRelations.map(normalizeRelation) : [],
     session: normalizeProjectSession(raw.session as ProjectSession | RawObject | undefined),
-    warnings: Array.isArray(raw.warnings) ? raw.warnings.map(errorInfo).filter((warning): warning is AppErrorInfo => Boolean(warning)) : undefined,
+    warnings: Array.isArray(raw.warnings) ? raw.warnings.map(normalizeAppError).filter((warning): warning is AppErrorInfo => Boolean(warning)) : undefined,
   };
 }
 
@@ -457,7 +518,9 @@ function normalizeEvent<K extends keyof BridgeEventMap>(eventName: K, value: unk
     const paths = Array.isArray(value) ? value : raw.paths;
     return {
       projectId: typeof raw.projectId === "string" ? raw.projectId : undefined,
-      paths: Array.isArray(paths) ? paths.filter((path): path is string => typeof path === "string") : [],
+      paths: Array.isArray(paths)
+        ? paths.filter((path): path is string => typeof path === "string" && path.trim().length > 0)
+        : [],
     } as unknown as BridgeEventMap[K];
   }
   if (eventName === "ducs:catalog-invalidated") {
@@ -469,7 +532,7 @@ function normalizeEvent<K extends keyof BridgeEventMap>(eventName: K, value: unk
       sourceId: typeof raw.sourceId === "string" ? raw.sourceId : undefined,
       relationId: typeof raw.relationId === "string" ? raw.relationId : undefined,
       source: raw.source ? normalizeSource(object(raw.source), string(raw.projectId)) : undefined,
-      error: errorInfo(raw.error) ?? { message: "The operation failed." },
+      error: normalizeAppError(raw.error) ?? { message: "The operation failed." },
     } as unknown as BridgeEventMap[K];
   }
   const sourceRaw = raw.source && typeof raw.source === "object" ? object(raw.source) : raw;
@@ -540,6 +603,9 @@ export const bridge = {
   },
   async GetSource(request: { projectId: string; id: string }): Promise<SourceInfo> {
     return normalizeSource(await app().GetSource(request), request.projectId);
+  },
+  async RenameSource(request: { projectId: string; id: string; displayName: string }): Promise<SourceInfo> {
+    return normalizeSource(await app().RenameSource(request), request.projectId);
   },
   GetRows(request: RowsRequest) { return app().GetRows(request); },
   async GetCellValue(request: GetCellValueRequest): Promise<CellValueResult> {
@@ -638,7 +704,7 @@ export const bridge = {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return errorInfo(error)?.message ?? "An unexpected error occurred.";
+  return normalizeAppError(error)?.message ?? "An unexpected error occurred.";
 }
 
 export function isBridgeAvailable(): boolean {

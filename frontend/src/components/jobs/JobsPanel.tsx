@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { presentAppError } from "@/lib/app-error";
 import { cn, formatElapsed } from "@/lib/utils";
 
 export interface JobsPanelProps {
@@ -44,7 +45,9 @@ function JobRow({ job, projectName, onCancel }: { job: Job; projectName: string;
   const details = stateDetails[job.state];
   const Icon = details.icon;
   const title = titleFor(job);
-  const message = job.error?.message ?? job.message;
+  const error = job.error ? presentAppError(job.error, job.message ?? `${job.kind} failed`, job.stage) : undefined;
+  const stage = error?.stage ?? job.stage;
+  const message = error?.message ?? job.message;
   const progress = percentage(job.progress);
   const cancellable = job.state === "queued" || job.state === "running";
   const elapsed = formatElapsed(job.startedAt ?? job.createdAt, job.finishedAt);
@@ -62,10 +65,15 @@ function JobRow({ job, projectName, onCancel }: { job: Job; projectName: string;
         <Badge variant={details.variant} className="h-4 px-1.5 text-[8px] uppercase leading-none">{details.label}</Badge>
       </div>
 
-      {(job.stage || message) && (
+      {(stage || message || error?.suggestion || error?.shortErrorRef || error?.logPath) && (
         <div className="grid gap-0.5 pl-9 text-[10px] leading-4">
-          {job.stage && <p className="font-medium text-foreground">{job.stage}</p>}
-          {message && message !== job.stage && <p className={job.state === "failed" ? "text-destructive" : "text-muted-foreground"}>{message}</p>}
+          {stage && <p className="font-medium text-foreground">{error?.stage ? <>Stage: <code>{stage}</code></> : stage}</p>}
+          {message && message !== stage && <p className={job.state === "failed" ? "text-destructive" : "text-muted-foreground"}>{message}</p>}
+          {error?.suggestion && <p className="text-muted-foreground">{error.suggestion}</p>}
+          {(error?.shortErrorRef || error?.logPath) && <p className="flex min-w-0 flex-wrap gap-x-2 text-muted-foreground">
+            {error.shortErrorRef && <span>Reference: <code className="text-foreground" title={error.errorRef}>{error.shortErrorRef}</code></span>}
+            {error.logPath && <span className="min-w-0">Log: <code className="break-all text-foreground" title={error.logPath}>{error.logPath}</code></span>}
+          </p>}
         </div>
       )}
 

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"ducs-table/internal/ai"
+	"ducs-table/internal/applog"
 	"ducs-table/internal/apppaths"
 	"ducs-table/internal/connections"
 	"ducs-table/internal/credentials"
@@ -41,6 +43,7 @@ type App struct {
 	federated   *federation.Session
 	connections *connections.Service
 	ai          *ai.Service
+	logger      *applog.Logger
 	startupErr  error
 	closeOnce   sync.Once
 	autoConnect sync.Mutex
@@ -55,13 +58,25 @@ func (a *App) startup(ctx context.Context) {
 		a.startupErr = err
 		return
 	}
+	appLogger, err := applog.Open(paths.LogPath, applog.Options{})
+	if err != nil {
+		a.startupErr = models.WrapError(models.CodeIO, "The application log could not be opened", err, nil)
+		return
+	}
+	a.logger = appLogger
+	slog.SetDefault(appLogger.Slog())
+	a.logger.Info("application_started", "log_path", paths.LogPath)
 	db, err := database.Open(a.ctx, paths)
 	if err != nil {
+		a.logger.Error("workspace_open_failed", err, []string{paths.DBPath}, "database", filepath.Base(paths.DBPath))
 		a.startupErr = workspaceOpenError(err)
 		return
 	}
 	a.db = db
 	a.jobs = jobs.NewManagerWithContext(a.ctx, 2, func(snapshot jobs.Snapshot) {
+		if snapshot.Kind == "import" && snapshot.State == jobs.StateCancelled && snapshot.StartedAt == nil {
+			a.logQueuedImportCancelled(snapshot)
+		}
 		a.emit("ducs:job-updated", snapshot)
 	})
 	a.extensions = extensions.NewManager()
@@ -92,10 +107,34 @@ func (a *App) startup(ctx context.Context) {
 	aiRuntime.SetClient(supervisor)
 	a.ai = aiRuntime
 	runtime.OnFileDrop(a.ctx, func(_, _ int, paths []string) {
-		if len(paths) > 0 {
+		// WebKit/Wails can report an HTML draggable element as a native file
+		// drop with one empty path. Only absolute, non-empty filesystem paths
+		// are valid here; filtering them prevents workbench tab drags from
+		// accidentally starting a failed import.
+		if paths = droppedFilePaths(paths); len(paths) > 0 {
 			a.emit("ducs:file-drop", map[string]any{"paths": paths})
 		}
 	})
+}
+
+func droppedFilePaths(paths []string) []string {
+	result := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		path = filepath.Clean(path)
+		if !filepath.IsAbs(path) {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		result = append(result, path)
+	}
+	return result
 }
 
 func (a *App) shutdown(context.Context) {
@@ -119,6 +158,10 @@ func (a *App) shutdown(context.Context) {
 		}
 		if a.db != nil {
 			_ = a.db.Close()
+		}
+		if a.logger != nil {
+			a.logger.Info("application_stopped")
+			_ = a.logger.Close()
 		}
 	})
 }
@@ -380,18 +423,7 @@ func (a *App) loadProjectWorkspace(projectID string) (ProjectWorkspace, error) {
 	}
 	if sessionChanged {
 		state.Session.Tabs = keptTabs
-		if state.Session.ActiveTabID != nil {
-			found := false
-			for _, tab := range keptTabs {
-				if tab.ID == *state.Session.ActiveTabID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.Session.ActiveTabID = nil
-			}
-		}
+		workspace.NormalizeSession(&state.Session)
 		if err := a.workspace.SaveSession(a.ctx, projectID, state.Session); err != nil {
 			return ProjectWorkspace{}, err
 		}
@@ -545,6 +577,9 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 			if idErr != nil {
 				return result, idErr
 			}
+			diagnostic := newImportDiagnostic(request.ProjectID, failed.ID, path, stringFromExtension(path), time.Now())
+			a.logImportStarted(diagnostic)
+			failed.Error = a.recordImportFailure(err, diagnostic)
 			result.Sources = append(result.Sources, failed)
 			continue
 		}
@@ -555,6 +590,9 @@ func (a *App) ImportPaths(request ImportPathsRequest) (ImportPathsResult, error)
 				if idErr != nil {
 					return result, idErr
 				}
+				diagnostic := newImportDiagnostic(request.ProjectID, failed.ID, file.Path, string(file.Type), time.Now())
+				a.logImportStarted(diagnostic)
+				failed.Error = a.recordImportFailure(sheetErr, diagnostic)
 				result.Sources = append(result.Sources, failed)
 				continue
 			}
@@ -633,11 +671,16 @@ func (a *App) startImport(projectID, path, sheet string, options importers.Optio
 	if err != nil {
 		return PreviewSource{}, nil, models.WrapError(models.CodeDatabase, "Could not create an import ID", err, nil)
 	}
+	diagnostic := newImportDiagnostic(projectID, id, path, stringFromExtension(path), time.Now())
+	a.logImportStarted(diagnostic)
 	preview, err := a.imports.Preview(a.ctx, path, options, sheet, 200)
 	if err != nil {
-		failed, failedErr := failedPreviewWithID(projectID, id, path, stringFromExtension(path), err)
+		diagnosed := a.recordImportFailure(err, diagnostic)
+		failed, failedErr := failedPreviewWithID(projectID, id, path, stringFromExtension(path), diagnosed)
 		return failed, nil, failedErr
 	}
+	diagnostic.SourceType = string(preview.File.Type)
+	diagnostic.Size = preview.File.Size
 	displayName := strings.TrimSuffix(preview.File.Name, filepath.Ext(preview.File.Name))
 	if preview.Sheet != "" {
 		displayName += " — " + preview.Sheet
@@ -647,6 +690,9 @@ func (a *App) startImport(projectID, path, sheet string, options importers.Optio
 		SourcePath: preview.File.Path, Kind: string(preview.File.Type), Sheet: preview.Sheet,
 		Size: preview.File.Size, Status: "preparing", Columns: preview.Columns, PreviewRows: preview.Rows,
 	}
+	// Publish the source before starting work so a very fast failure can always
+	// be applied to an existing frontend record.
+	a.emit("ducs:dataset-preview", map[string]any{"projectId": projectID, "source": view})
 	snapshot, err := a.jobs.Submit(jobs.Metadata{ProjectID: projectID, Kind: "import", Label: displayName, SourceID: id}, func(ctx context.Context, reporter jobs.Reporter) (any, error) {
 		reporter.Update(0, "Materializing in DuckDB…")
 		source, importErr := a.imports.Materialize(ctx, importers.MaterializeRequest{
@@ -654,19 +700,24 @@ func (a *App) startImport(projectID, path, sheet string, options importers.Optio
 			Sheet: preview.Sheet, Options: options,
 		})
 		if importErr != nil {
+			diagnosed := a.recordImportFailure(importErr, diagnostic)
 			a.emit("ducs:dataset-failed", map[string]any{
-				"projectId": projectID, "sourceId": id, "error": models.AsAppError(importErr),
+				"projectId": projectID, "sourceId": id, "error": diagnosed,
 			})
-			return nil, importErr
+			return nil, diagnosed
 		}
 		reporter.Update(1, "Ready")
+		a.logImportSucceeded(diagnostic, source.RowCount, len(source.Columns))
 		a.emit("ducs:dataset-ready", map[string]any{"projectId": projectID, "source": source})
 		return source, nil
 	})
 	if err != nil {
-		return PreviewSource{}, nil, err
+		diagnosed := a.recordImportFailure(err, diagnostic)
+		view.Status = "failed"
+		view.Error = diagnosed
+		a.emit("ducs:dataset-failed", map[string]any{"projectId": projectID, "sourceId": id, "error": diagnosed})
+		return view, nil, nil
 	}
-	a.emit("ducs:dataset-preview", map[string]any{"projectId": projectID, "source": view})
 	return view, &snapshot, nil
 }
 
@@ -702,6 +753,13 @@ func (a *App) GetSource(request ProjectResourceRequest) (models.SourceInfo, erro
 		return models.SourceInfo{}, err
 	}
 	return a.workspace.GetSource(a.ctx, request.ProjectID, request.ID)
+}
+
+func (a *App) RenameSource(request RenameSourceRequest) (models.SourceInfo, error) {
+	if err := a.ready(); err != nil {
+		return models.SourceInfo{}, err
+	}
+	return a.workspace.RenameSource(a.ctx, request.ProjectID, request.ID, request.DisplayName)
 }
 
 func (a *App) GetRows(request grid.RowsRequest) (grid.RowsResponse, error) {
@@ -956,18 +1014,7 @@ func (a *App) DetachConnectionFromProject(request ProjectConnectionRequest) erro
 		tabs = append(tabs, tab)
 	}
 	session.Tabs = tabs
-	if session.ActiveTabID != nil {
-		found := false
-		for _, tab := range tabs {
-			if tab.ID == *session.ActiveTabID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			session.ActiveTabID = nil
-		}
-	}
+	workspace.NormalizeSession(&session)
 	return a.workspace.SaveSession(a.ctx, request.ProjectID, session)
 }
 

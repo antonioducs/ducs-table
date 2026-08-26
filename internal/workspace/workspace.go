@@ -141,6 +141,36 @@ func (s *Service) GetDataset(ctx context.Context, projectID, id string) (models.
 	return s.GetSource(ctx, projectID, id)
 }
 
+// RenameSource changes only the user-facing label. The physical DuckDB table
+// and its SQL name stay unchanged so existing queries keep working.
+func (s *Service) RenameSource(ctx context.Context, projectID, id, displayName string) (models.SourceInfo, error) {
+	if strings.TrimSpace(id) == "" {
+		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Source ID is required", nil)
+	}
+	displayName, err := cleanName(displayName)
+	if err != nil {
+		return models.SourceInfo{}, err
+	}
+	now := time.Now().UTC()
+	err = s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		if _, err := GetSource(ctx, tx, projectID, id, false); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			UPDATE ducs_meta.datasets SET display_name = ?, updated_at = ?
+			WHERE project_id = ? AND id = ?`, displayName, now, projectID, id)
+		return err
+	})
+	if err != nil {
+		var appErr *models.AppError
+		if errors.As(err, &appErr) {
+			return models.SourceInfo{}, appErr
+		}
+		return models.SourceInfo{}, models.WrapError(models.CodeDatabase, "Could not rename source", err, map[string]any{"projectId": projectID, "sourceId": id})
+	}
+	return s.GetSource(ctx, projectID, id)
+}
+
 // RemoveDataset atomically drops the physical table and scoped metadata.
 func (s *Service) RemoveDataset(ctx context.Context, projectID, id string) error {
 	if strings.TrimSpace(id) == "" {

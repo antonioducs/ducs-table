@@ -12,7 +12,8 @@ Duc's Table is a private, local-first macOS SQL workspace for files and database
 - Runs federated `SELECT`/`WITH` queries across local tables and attached databases.
 - Materializes every editor result into local `result.*` storage for fast paging and export after a database disconnects.
 - Saves query results as local tables, saves named SQL, and exports entire or filtered/sorted views to CSV.
-- Persists each project's SQL draft, valid tabs, 20 recent executions, and result-name sequence in the local DuckDB workspace.
+- Arranges tables, live relations, and SQL editors as tabs inside splittable editor groups; each query owns its latest output directly below the editor.
+- Persists each project's query documents, editor groups, split layout, valid tabs, 20 recent executions, and result-name sequence in the local DuckDB workspace.
 - Persists local datasets, snapshots, SQL, safe connection metadata, and lightweight global layout preferences between launches.
 - Offers an optional AI assistant backed by OpenAI Codex or Anthropic Claude, with project-scoped metadata tools and separately approved query previews.
 
@@ -55,7 +56,7 @@ Quote every segment independently when names contain spaces, capitals, quotes, o
 
 The editor accepts exactly one `SELECT` or `WITH` statement. DDL, DML, attach/detach, install/load, secrets, filesystem writes, HTTP writes, and provider escape hatches such as `postgres_execute`, `postgres_query`, `postgres_scan`, and `mongo_scan` are rejected. Normal references to catalogs attached by the app remain available.
 
-Internal attach, extension, secret, result, and snapshot operations are not passed through user SQL. Federated results are materialized locally before being published as tabs.
+Internal attach, extension, secret, result, and snapshot operations are not passed through user SQL. Query output is materialized locally for paging and remains attached to its query until replaced or saved as a table.
 
 Example federated query:
 
@@ -174,7 +175,9 @@ Application state lives under:
 └── app.log
 ```
 
-All projects live in the same `workspace.duckdb`. DuckDB materializes imported files, snapshots, and query results there and stores project metadata plus the SQL editor session locally. This uses disk space in exchange for fast repeated filtering, SQL, export, and session restoration. Ephemeral unsaved query results are removed at the next startup, and stale result tabs are reconciled automatically.
+All projects live in the same `workspace.duckdb`. DuckDB materializes imported files, snapshots, and query output there and stores project metadata plus the workbench session (query documents, tabs, editor groups, and split layout) locally. This uses disk space in exchange for fast repeated filtering, SQL, export, and session restoration. Sessions saved by older versions are migrated on load into the split layout. Ephemeral query output is replaced on successful reruns, discarded with its query, and removed at startup if the app did not close cleanly.
+
+`app.log` is a local structured diagnostic log. It records import IDs, source filename/type/size, stage, duration, outcome, and a sanitized technical error chain. Row contents, payloads, passwords, tokens, and credential-bearing URIs are redacted. The active log rotates at 5 MiB and keeps three backups (`app.log.1` through `app.log.3`). Error references shown in the UI correlate with entries in this file.
 
 Existing workspaces are migrated automatically into a project named **My Workspace** without changing source IDs, physical tables, snapshots, saved SQL, connection IDs, timestamps, or Keychain items. New projects start empty and can attach global connections already configured in the app. Projects can be archived and restored; this release intentionally has no hard delete, duplicate, move/copy, or project import/export.
 
@@ -189,6 +192,7 @@ Workbook sheet names are inspected locally with Excelize. Data import uses DuckD
 - **Keychain unavailable:** unlock the login Keychain and allow the app access. Duc's Table will not fall back to a file.
 - **Extension unavailable:** verify network access on first use and that the extension supports the current DuckDB/Mac architecture. A cached extension works offline.
 - **Connection error:** verify the read-only account, host/port, SSL/TLS, auth source, and schema scope. Errors are intentionally sanitized and do not echo connection strings.
+- **Import error:** follow the suggestion shown in the banner or Jobs panel. If it persists, use the displayed reference to find the matching sanitized entry in `app.log`.
 - **Large remote joins:** DuckDB can push filters/projections, but large cross-source joins still transfer remote data and the single federated session serializes live operations for correctness. Snapshot large relations when repeated analysis is expected.
 - Imported tables and snapshots are immutable; there is no cell/schema editor or remote write support.
 - There is no built-in SSH tunnel, cloud IAM/OAuth flow, CDC, scheduler, incremental refresh, or Mongo aggregation builder.

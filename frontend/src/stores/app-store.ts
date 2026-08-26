@@ -12,15 +12,40 @@ import type {
   QueryHistoryEntry,
   SavedQuery,
   SourceInfo,
+  SplitDirection,
+  SQLDocument,
 } from "@/types";
+import {
+  activeGroup,
+  activeTabOf,
+  closeTab as closeSessionTab,
+  closeTabs,
+  createSession,
+  documentOf,
+  findGroup,
+  findTab,
+  focusedDocumentId,
+  focusGroup,
+  moveTab as moveSessionTab,
+  neighborGroupId,
+  normalizeSession,
+  openOrSplitSQLTab,
+  openTab as openSessionTab,
+  resizeSplit,
+  selectTab as selectSessionTab,
+  splitGroup as splitSessionGroup,
+  splitWithNewSQLTab,
+  splitWithNewTab,
+  updateDocument as updateSessionDocument,
+  type LayoutPath,
+} from "@/lib/workbench";
 
 export type AppTab = ProjectTabReference;
 export type { QueryHistoryEntry } from "@/types";
 
 export interface PanelState {
   sidebarSize: number;
-  sqlSize: number;
-  sqlCollapsed: boolean;
+  sidebarCollapsed: boolean;
   aiSize: number;
   aiCollapsed: boolean;
 }
@@ -51,7 +76,6 @@ export interface AppState {
   connectionsById: Record<string, ConnectionInfo>;
   jobsById: Record<string, Job>;
   jobIds: string[];
-  activeSavedQueryIds: Record<string, string | undefined>;
   panel: PanelState;
   bootstrapped: boolean;
 
@@ -70,12 +94,20 @@ export interface AppState {
 
   upsertSource: (projectId: string, source: SourceInfo) => void;
   removeSource: (projectId: string, sourceId: string) => void;
-  openTab: (projectId: string, sourceId: string) => void;
-  openExternalTab: (projectId: string, relation: ExternalRelationInfo) => void;
+  openTab: (projectId: string, sourceId: string, options?: OpenPlacement) => void;
+  openExternalTab: (projectId: string, relation: ExternalRelationInfo, options?: OpenPlacement) => void;
   closeTab: (projectId: string, tabId: string) => void;
+  closeOtherTabs: (projectId: string, groupId: string, keepTabId: string) => void;
   selectTab: (projectId: string, tabId: string) => void;
   selectSource: (projectId: string, sourceId: string) => void;
   markExternalPlaceholder: (projectId: string, relationId: string, reason: "disconnected" | "missing") => void;
+
+  openSQLTab: (projectId: string, options?: { title?: string; sql?: string; savedQueryId?: string; groupId?: string }) => string | undefined;
+  updateDocument: (projectId: string, documentId: string, patch: Partial<Omit<SQLDocument, "id">>) => void;
+  splitGroup: (projectId: string, groupId: string, direction: SplitDirection, tabId?: string) => void;
+  moveTab: (projectId: string, tabId: string, groupId: string, index?: number) => void;
+  setActiveGroup: (projectId: string, groupId: string) => void;
+  setLayoutSizes: (projectId: string, path: LayoutPath, sizes: number[]) => void;
 
   setConnectionSchemas: (projectId: string, connectionId: string, schemas: string[]) => void;
   setExternalRelations: (projectId: string, connectionId: string, schema: string, relations: ExternalRelationInfo[]) => ProjectTabReference[];
@@ -86,6 +118,7 @@ export interface AppState {
   insertIntoDraft: (projectId: string, text: string) => void;
   newDraft: (projectId: string) => void;
   loadSavedQuery: (projectId: string, queryId: string) => void;
+  bindSavedQuery: (projectId: string, documentId: string, query: SavedQuery) => void;
   upsertSavedQuery: (projectId: string, query: SavedQuery) => void;
   removeSavedQuery: (projectId: string, queryId: string) => void;
   addHistory: (projectId: string, entry: Omit<QueryHistoryEntry, "id" | "ranAt">) => void;
@@ -96,10 +129,20 @@ export interface AppState {
   reset: () => void;
 }
 
-const initialPanel: PanelState = { sidebarSize: 19, sqlSize: 29, sqlCollapsed: false, aiSize: 28, aiCollapsed: true };
+const initialPanel: PanelState = { sidebarSize: 19, sidebarCollapsed: false, aiSize: 28, aiCollapsed: true };
+
+/** Where a newly opened tab should land inside the workbench. */
+export interface OpenPlacement {
+  groupId?: string;
+  activate?: boolean;
+  /** Split the target group instead of appending to it. */
+  split?: SplitDirection;
+  /** Prefer the group displayed next to `groupId`, creating one when needed. */
+  beside?: boolean;
+}
 
 export function createEmptyProjectSession(): ProjectSession {
-  return { version: 1, sqlDraft: "", tabs: [], history: [], resultSequence: 0 };
+  return createSession();
 }
 
 function sanitizeSource(projectId: string, source: SourceInfo): SourceInfo {
@@ -109,16 +152,7 @@ function sanitizeSource(projectId: string, source: SourceInfo): SourceInfo {
 }
 
 function sanitizeSession(session?: ProjectSession): ProjectSession {
-  const value = session ?? createEmptyProjectSession();
-  const tabs = Array.isArray(value.tabs) ? value.tabs.map((tab) => ({ ...tab })) : [];
-  return {
-    version: Number.isFinite(value.version) && value.version > 0 ? Math.floor(value.version) : 1,
-    sqlDraft: typeof value.sqlDraft === "string" ? value.sqlDraft : "",
-    tabs,
-    activeTabId: value.activeTabId && tabs.some((tab) => tab.id === value.activeTabId) ? value.activeTabId : undefined,
-    history: Array.isArray(value.history) ? value.history.slice(0, 20) : [],
-    resultSequence: Number.isFinite(value.resultSequence) && value.resultSequence >= 0 ? Math.floor(value.resultSequence) : 0,
-  };
+  return normalizeSession(session ?? createEmptyProjectSession());
 }
 
 function workspaceState(workspace: ProjectWorkspace): ProjectWorkspaceState {
@@ -167,9 +201,8 @@ export function preserveWorkspaceMutations(
   };
 }
 
-function localTab(source: SourceInfo): ProjectTabReference {
+function localTabFields(source: SourceInfo): Omit<ProjectTabReference, "id"> {
   return {
-    id: `source:${source.id}`,
     kind: "local",
     sourceId: source.id,
     title: source.displayName,
@@ -178,17 +211,26 @@ function localTab(source: SourceInfo): ProjectTabReference {
 }
 
 function removeTabs(session: ProjectSession, predicate: (tab: ProjectTabReference) => boolean): ProjectSession {
-  const removed = new Set(session.tabs.filter(predicate).map((tab) => tab.id));
-  if (!removed.size) return session;
-  const index = session.tabs.findIndex((tab) => tab.id === session.activeTabId);
-  const tabs = session.tabs.filter((tab) => !removed.has(tab.id));
-  return {
-    ...session,
-    tabs,
-    activeTabId: session.activeTabId && removed.has(session.activeTabId)
-      ? tabs[Math.min(Math.max(index, 0), tabs.length - 1)]?.id
-      : session.activeTabId,
-  };
+  return closeTabs(session, predicate);
+}
+
+/** Resolves an OpenPlacement into the group that should receive the tab. */
+function placementGroupId(session: ProjectSession, placement?: OpenPlacement): string {
+  const base = placement?.groupId && findGroup(session, placement.groupId) ? placement.groupId : activeGroup(session).id;
+  if (!placement?.beside) return base;
+  return neighborGroupId(session, base) ?? base;
+}
+
+function applySession(
+  current: AppState,
+  projectId: string,
+  update: (session: ProjectSession, workspace: ProjectWorkspaceState) => ProjectSession,
+): Partial<AppState> | AppState {
+  const workspace = current.projectWorkspaces[projectId];
+  if (!workspace) return current;
+  const session = update(workspace.session, workspace);
+  if (session === workspace.session) return current;
+  return { projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session } } };
 }
 
 const dataInitial = {
@@ -200,7 +242,6 @@ const dataInitial = {
   connectionsById: {} as Record<string, ConnectionInfo>,
   jobsById: {} as Record<string, Job>,
   jobIds: [] as string[],
-  activeSavedQueryIds: {} as Record<string, string | undefined>,
   panel: initialPanel,
   bootstrapped: false,
 };
@@ -251,7 +292,6 @@ export const useAppStore = create<AppState>()(
             connectionsById,
             activeProjectId: projectId,
             switchingProjectId: undefined,
-            activeSavedQueryIds: { ...current.activeSavedQueryIds, [projectId]: undefined },
           };
         });
         return committed;
@@ -332,10 +372,12 @@ export const useAppStore = create<AppState>()(
         if (!workspace) return current;
         const incoming = sanitizeSource(projectId, source);
         const existing = workspace.sourcesById[incoming.id];
-        const next = existing?.status === "ready" && (incoming.status === "preview" || incoming.status === "preparing")
+        const terminal = existing?.status === "ready" || existing?.status === "failed" || existing?.status === "cancelled";
+        const staleAfterReady = existing?.status === "ready" && incoming.status !== "ready";
+        const next = (terminal && (incoming.status === "preview" || incoming.status === "preparing")) || staleAfterReady
           ? existing
           : { ...existing, ...incoming };
-        const tabs = workspace.session.tabs.map((tab) => tab.sourceId === incoming.id ? { ...tab, ...localTab(next), id: tab.id } : tab);
+        const tabs = workspace.session.tabs.map((tab) => tab.sourceId === incoming.id ? { ...tab, ...localTabFields(next) } : tab);
         return {
           projectWorkspaces: {
             ...current.projectWorkspaces,
@@ -365,28 +407,25 @@ export const useAppStore = create<AppState>()(
           },
         };
       }),
-      openTab: (projectId, sourceId) => set((current) => {
-        const workspace = current.projectWorkspaces[projectId];
-        const source = workspace?.sourcesById[sourceId];
-        if (!workspace || !source) return current;
-        const tab = localTab(source);
-        const exists = workspace.session.tabs.some((item) => item.id === tab.id);
-        const activeTabId = current.activeProjectId === projectId ? tab.id : workspace.session.activeTabId;
-        return {
-          projectWorkspaces: {
-            ...current.projectWorkspaces,
-            [projectId]: {
-              ...workspace,
-              session: { ...workspace.session, tabs: exists ? workspace.session.tabs : [...workspace.session.tabs, tab], activeTabId },
-            },
-          },
-        };
-      }),
-      openExternalTab: (projectId, relation) => set((current) => {
+      openTab: (projectId, sourceId, options) => set((current) => applySession(current, projectId, (session, workspace) => {
+        const source = workspace.sourcesById[sourceId];
+        if (!source) return session;
+        const fields = localTabFields(source);
+        const activate = options?.activate !== false && current.activeProjectId === projectId;
+        const existing = session.tabs.find((tab) => tab.kind === "local" && tab.sourceId === sourceId);
+        if (existing) {
+          const merged = session.tabs.map((tab) => tab.id === existing.id ? { ...tab, ...fields } : tab);
+          const withTab = { ...session, tabs: merged };
+          return activate ? selectSessionTab(withTab, existing.id) : withTab;
+        }
+        const groupId = placementGroupId(session, options);
+        if (options?.split) return splitWithNewTab(session, groupId, options.split, fields);
+        return openSessionTab(session, fields, { groupId, activate });
+      })),
+      openExternalTab: (projectId, relation, options) => set((current) => {
         const workspace = current.projectWorkspaces[projectId];
         if (!workspace) return current;
-        const tab: ProjectTabReference = {
-          id: `external:${relation.id}`,
+        const fields: Omit<ProjectTabReference, "id"> = {
           kind: "external",
           relationId: relation.id,
           connectionId: relation.connectionId,
@@ -396,34 +435,65 @@ export const useAppStore = create<AppState>()(
           relationType: relation.relationType,
           title: relation.name,
         };
-        const exists = workspace.session.tabs.some((item) => item.id === tab.id);
+        const activate = options?.activate !== false && current.activeProjectId === projectId;
+        const session = workspace.session;
+        const existing = session.tabs.find((tab) => tab.relationId === relation.id);
+        let next: ProjectSession;
+        if (existing) {
+          const merged = session.tabs.map((tab) => tab.id === existing.id ? { ...tab, ...fields, placeholderReason: undefined } : tab);
+          next = activate ? selectSessionTab({ ...session, tabs: merged }, existing.id) : { ...session, tabs: merged };
+        } else {
+          const groupId = placementGroupId(session, options);
+          next = options?.split
+            ? splitWithNewTab(session, groupId, options.split, fields)
+            : openSessionTab(session, fields, { groupId, activate });
+        }
         return {
           projectWorkspaces: {
             ...current.projectWorkspaces,
             [projectId]: {
               ...workspace,
               catalog: { ...workspace.catalog, relationsById: { ...workspace.catalog.relationsById, [relation.id]: relation } },
-              session: {
-                ...workspace.session,
-                tabs: exists ? workspace.session.tabs.map((item) => item.id === tab.id ? tab : item) : [...workspace.session.tabs, tab],
-                activeTabId: current.activeProjectId === projectId ? tab.id : workspace.session.activeTabId,
-              },
+              session: next,
             },
           },
         };
       }),
-      closeTab: (projectId, tabId) => set((current) => {
-        const workspace = current.projectWorkspaces[projectId];
-        if (!workspace) return current;
-        return { projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: removeTabs(workspace.session, (tab) => tab.id === tabId) } } };
-      }),
+      closeTab: (projectId, tabId) => set((current) => applySession(current, projectId, (session) => closeSessionTab(session, tabId))),
+      closeOtherTabs: (projectId, groupId, keepTabId) => set((current) => applySession(current, projectId, (session) => {
+        const group = findGroup(session, groupId);
+        if (!group) return session;
+        return group.tabIds
+          .filter((tabId) => tabId !== keepTabId)
+          .reduce((currentSession, tabId) => closeSessionTab(currentSession, tabId), session);
+      })),
       selectTab: (projectId, tabId) => set((current) => {
         if (current.activeProjectId !== projectId) return current;
-        const workspace = current.projectWorkspaces[projectId];
-        if (!workspace?.session.tabs.some((tab) => tab.id === tabId)) return current;
-        return { projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: { ...workspace.session, activeTabId: tabId } } } };
+        return applySession(current, projectId, (session) => selectSessionTab(session, tabId));
       }),
       selectSource: (projectId, sourceId) => get().openTab(projectId, sourceId),
+
+      openSQLTab: (projectId, options) => {
+        let documentId: string | undefined;
+        set((current) => applySession(current, projectId, (session) => {
+          const opened = openOrSplitSQLTab(session, options?.groupId ? { ...options, groupId: placementGroupId(session, options) } : options);
+          documentId = opened.documentId;
+          return opened.session;
+        }));
+        return documentId;
+      },
+      updateDocument: (projectId, documentId, patch) => set((current) => applySession(current, projectId, (session) => updateSessionDocument(session, documentId, patch))),
+      splitGroup: (projectId, groupId, direction, tabId) => set((current) => applySession(current, projectId, (session) => {
+        const split = splitSessionGroup(session, groupId, direction, tabId);
+        if (split !== session) return split;
+        // A lone SQL tab cannot be duplicated (one document, one tab), so the
+        // split starts a fresh query beside it instead.
+        const target = findTab(session, tabId ?? findGroup(session, groupId)?.activeTabId);
+        return target?.kind === "sql" ? splitWithNewSQLTab(session, groupId, direction).session : session;
+      })),
+      moveTab: (projectId, tabId, groupId, index) => set((current) => applySession(current, projectId, (session) => moveSessionTab(session, tabId, groupId, index))),
+      setActiveGroup: (projectId, groupId) => set((current) => applySession(current, projectId, (session) => focusGroup(session, groupId))),
+      setLayoutSizes: (projectId, path, sizes) => set((current) => applySession(current, projectId, (session) => resizeSplit(session, path, sizes))),
       markExternalPlaceholder: (projectId, relationId, reason) => set((current) => {
         const workspace = current.projectWorkspaces[projectId];
         if (!workspace) return current;
@@ -516,47 +586,52 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
-      setDraft: (projectId, sql) => set((current) => {
-        const workspace = current.projectWorkspaces[projectId];
-        if (!workspace) return current;
-        return { projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: { ...workspace.session, sqlDraft: sql } } } };
-      }),
-      insertIntoDraft: (projectId, text) => set((current) => {
-        const workspace = current.projectWorkspaces[projectId];
-        if (!workspace) return current;
-        const existing = workspace.session.sqlDraft;
+      // Draft helpers target the focused SQL tab and open one when the workbench
+      // has no query editor yet, so the sidebar and AI panel keep working.
+      setDraft: (projectId, sql) => set((current) => applySession(current, projectId, (session) => {
+        const documentId = focusedDocumentId(session);
+        if (documentId) return updateSessionDocument(session, documentId, { sql });
+        return openOrSplitSQLTab(session, { sql }).session;
+      })),
+      insertIntoDraft: (projectId, text) => set((current) => applySession(current, projectId, (session) => {
+        const documentId = focusedDocumentId(session);
+        if (!documentId) return openOrSplitSQLTab(session, { sql: text }).session;
+        const document = documentOf(session, documentId);
+        const existing = document?.sql ?? "";
         const separator = existing && !/\s$/.test(existing) ? " " : "";
-        return { projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: { ...workspace.session, sqlDraft: `${existing}${separator}${text}` } } } };
-      }),
-      newDraft: (projectId) => set((current) => {
-        const workspace = current.projectWorkspaces[projectId];
-        if (!workspace) return current;
-        return {
-          projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: { ...workspace.session, sqlDraft: "" } } },
-          activeSavedQueryIds: { ...current.activeSavedQueryIds, [projectId]: undefined },
-        };
-      }),
+        return updateSessionDocument(session, documentId, { sql: `${existing}${separator}${text}` });
+      })),
+      newDraft: (projectId) => set((current) => applySession(current, projectId, (session) => openOrSplitSQLTab(session).session)),
       loadSavedQuery: (projectId, queryId) => set((current) => {
         if (current.activeProjectId !== projectId) return current;
-        const workspace = current.projectWorkspaces[projectId];
-        const query = workspace?.savedQueriesById[queryId];
-        if (!workspace || !query) return current;
-        return {
-          projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, session: { ...workspace.session, sqlDraft: query.sql } } },
-          activeSavedQueryIds: { ...current.activeSavedQueryIds, [projectId]: queryId },
-          panel: { ...current.panel, sqlCollapsed: false },
-        };
+        return applySession(current, projectId, (session, workspace) => {
+          const query = workspace.savedQueriesById[queryId];
+          if (!query) return session;
+          const openDocument = session.documents.find((document) => document.savedQueryId === queryId);
+          if (openDocument) {
+            const tab = session.tabs.find((item) => item.documentId === openDocument.id);
+            const refreshed = updateSessionDocument(session, openDocument.id, { sql: query.sql, title: query.name });
+            return tab ? selectSessionTab(refreshed, tab.id) : refreshed;
+          }
+          return openOrSplitSQLTab(session, { title: query.name, sql: query.sql, savedQueryId: queryId }).session;
+        });
       }),
+      bindSavedQuery: (projectId, documentId, query) => set((current) => applySession(current, projectId, (session) => updateSessionDocument(session, documentId, { savedQueryId: query.id, title: query.name }))),
       upsertSavedQuery: (projectId, query) => set((current) => {
         const workspace = current.projectWorkspaces[projectId];
         if (!workspace) return current;
         const saved = { ...query, projectId };
         const exists = Boolean(workspace.savedQueriesById[saved.id]);
+        const renamed = exists && workspace.savedQueriesById[saved.id].name !== saved.name;
         const savedQueryIds = (exists ? workspace.savedQueryIds : [...workspace.savedQueryIds, saved.id])
           .sort((left, right) => (left === saved.id ? saved.name : workspace.savedQueriesById[left]?.name ?? "").localeCompare(right === saved.id ? saved.name : workspace.savedQueriesById[right]?.name ?? ""));
+        const session = renamed
+          ? workspace.session.documents
+            .filter((document) => document.savedQueryId === saved.id)
+            .reduce((current, document) => updateSessionDocument(current, document.id, { title: saved.name }), workspace.session)
+          : workspace.session;
         return {
-          projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, savedQueryIds, savedQueriesById: { ...workspace.savedQueriesById, [saved.id]: saved } } },
-          activeSavedQueryIds: { ...current.activeSavedQueryIds, [projectId]: saved.id },
+          projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, savedQueryIds, savedQueriesById: { ...workspace.savedQueriesById, [saved.id]: saved }, session } },
         };
       }),
       removeSavedQuery: (projectId, queryId) => set((current) => {
@@ -564,9 +639,18 @@ export const useAppStore = create<AppState>()(
         if (!workspace) return current;
         const savedQueriesById = { ...workspace.savedQueriesById };
         delete savedQueriesById[queryId];
+        // Open editors keep their text; they just stop tracking the saved query.
+        const documents = workspace.session.documents.map((document) => document.savedQueryId === queryId ? { ...document, savedQueryId: undefined } : document);
         return {
-          projectWorkspaces: { ...current.projectWorkspaces, [projectId]: { ...workspace, savedQueryIds: workspace.savedQueryIds.filter((id) => id !== queryId), savedQueriesById } },
-          activeSavedQueryIds: current.activeSavedQueryIds[projectId] === queryId ? { ...current.activeSavedQueryIds, [projectId]: undefined } : current.activeSavedQueryIds,
+          projectWorkspaces: {
+            ...current.projectWorkspaces,
+            [projectId]: {
+              ...workspace,
+              savedQueryIds: workspace.savedQueryIds.filter((id) => id !== queryId),
+              savedQueriesById,
+              session: { ...workspace.session, documents },
+            },
+          },
         };
       }),
       addHistory: (projectId, entry) => set((current) => {
@@ -617,16 +701,29 @@ export const selectWorkspaceConnections = (state: AppState, workspace?: ProjectW
 export const selectJobs = (state: AppState): Job[] => state.jobIds.map((id) => state.jobsById[id]).filter(Boolean);
 export const selectProjectJobs = (state: AppState, projectId?: string): Job[] => selectJobs(state).filter((job) => job.projectId === projectId);
 
+/** Tab focused in the active editor group. */
+export const selectActiveTab = (state: AppState): ProjectTabReference | undefined => {
+  const workspace = selectActiveWorkspace(state);
+  return workspace ? activeTabOf(workspace.session) : undefined;
+};
+
 export const selectActiveSource = (state: AppState): SourceInfo | undefined => {
   const workspace = selectActiveWorkspace(state);
-  const sourceId = workspace?.session.tabs.find((tab) => tab.id === workspace.session.activeTabId)?.sourceId;
+  const sourceId = workspace ? activeTabOf(workspace.session)?.sourceId : undefined;
   return sourceId ? workspace?.sourcesById[sourceId] : undefined;
 };
 
 export const selectActiveRelation = (state: AppState): ExternalRelationInfo | undefined => {
   const workspace = selectActiveWorkspace(state);
-  const relationId = workspace?.session.tabs.find((tab) => tab.id === workspace.session.activeTabId)?.relationId;
+  const relationId = workspace ? activeTabOf(workspace.session)?.relationId : undefined;
   return relationId ? workspace?.catalog.relationsById[relationId] : undefined;
+};
+
+/** SQL document a global action (AI panel, sidebar insert) should target. */
+export const selectFocusedDocument = (state: AppState): SQLDocument | undefined => {
+  const workspace = selectActiveWorkspace(state);
+  if (!workspace) return undefined;
+  return documentOf(workspace.session, focusedDocumentId(workspace.session));
 };
 
 export const selectActiveJobs = (state: AppState): Job[] => selectJobs(state).filter((job) => job.state === "queued" || job.state === "running");

@@ -37,4 +37,25 @@ describe("JobsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel running source" }));
     expect(onCancel).toHaveBeenCalledWith(expect.objectContaining({ id: "job-running" }));
   });
+
+  it("shows actionable import failure diagnostics", () => {
+    const failed = job("failed");
+    failed.error = {
+      message: "The workbook is password protected.",
+      details: {
+        stage: "Opening workbook",
+        suggestion: "Save an unprotected copy and retry.",
+        errorRef: "bd260767-4112-465d-ae55-87d700e7866c",
+        logPath: "/Users/example/Library/Logs/DUCS Table/app.log",
+      },
+    };
+    render(<JobsPanel open onOpenChange={vi.fn()} jobs={[failed]} projects={[{ id: "other", name: "Other", description: "", lastOpenedAt: "", createdAt: "", updatedAt: "" }]} onCancel={vi.fn()} />);
+
+    const row = document.querySelector('[data-job-state="failed"]');
+    expect(row).toHaveTextContent("The workbook is password protected.");
+    expect(row).toHaveTextContent("Stage: Opening workbook");
+    expect(row).toHaveTextContent("Save an unprotected copy and retry.");
+    expect(row).toHaveTextContent("Reference: bd260767");
+    expect(row).toHaveTextContent("Log: /Users/example/Library/Logs/DUCS Table/app.log");
+  });
 });

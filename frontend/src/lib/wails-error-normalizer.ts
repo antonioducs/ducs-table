@@ -1,3 +1,6 @@
+import { appErrorToastDescription, presentAppError } from "@/lib/app-error";
+import type { AppErrorInfo } from "@/types";
+
 type CallbackPayload = {
   error?: unknown;
   [key: string]: unknown;
@@ -16,8 +19,14 @@ function structuredMessage(value: unknown): string | undefined {
   const raw = value as Record<string, unknown>;
   const message = structuredMessage(raw.message ?? raw.Message ?? raw.error ?? raw.Error);
   const code = typeof (raw.code ?? raw.Code) === "string" ? String(raw.code ?? raw.Code).trim() : "";
-  if (message && code && !message.startsWith(`[${code}]`)) return `[${code}] ${message}`;
-  return message ?? (code ? `[${code}] The operation failed.` : undefined);
+  const base = message && code && !message.startsWith(`[${code}]`) ? `[${code}] ${message}` : message ?? (code ? `[${code}] The operation failed.` : undefined);
+  const details = raw.details ?? raw.Details;
+  if (base && details && typeof details === "object") {
+    const presented = presentAppError({ code: code || undefined, message: message ?? "The operation failed.", details: details as AppErrorInfo["details"] }, message ?? "The operation failed.");
+    const description = appErrorToastDescription(presented);
+    if (description) return `${base} — ${description}`;
+  }
+  return base;
 }
 
 // Wails v2.15 wraps callback errors with new Error(payload.error). Structured

@@ -134,6 +134,19 @@ func TestSourcesAndSavedQueriesAreStrictlyProjectScoped(t *testing.T) {
 	if _, err := service.GetSource(ctx, second.ID, source.ID); errorCode(err) != models.CodeSourceNotFound {
 		t.Fatalf("cross-project source read error = %#v", err)
 	}
+	renamed, err := service.RenameSource(ctx, first.ID, source.ID, "  People report  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.DisplayName != "People report" || renamed.SQLName != source.SQLName {
+		t.Fatalf("renamed source = %#v", renamed)
+	}
+	if _, err := service.RenameSource(ctx, second.ID, source.ID, "Stolen"); errorCode(err) != models.CodeSourceNotFound {
+		t.Fatalf("cross-project source rename error = %#v", err)
+	}
+	if _, err := service.RenameSource(ctx, first.ID, source.ID, "   "); errorCode(err) != models.CodeInvalidArgument {
+		t.Fatalf("empty source name error = %#v", err)
+	}
 
 	firstQuery, err := service.CreateSavedQuery(ctx, first.ID, "Adults", `SELECT * FROM data.people_project_one`)
 	if err != nil {

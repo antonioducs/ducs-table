@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Ban, Clock3, Eye, LoaderCircle, RotateCcw, SearchX, X } from "lucide-react";
 import type { Job, SourceInfo, SourceStatus } from "@/types";
 import { Button } from "@/components/ui/button";
+import { presentAppError, type AppErrorPresentation } from "@/lib/app-error";
 import { cn, formatElapsed } from "@/lib/utils";
 
 export type SourceViewState = SourceStatus | "no-results";
@@ -34,7 +35,7 @@ function detailsFor(state: SourceViewState, source: SourceInfo, job?: Job): Stat
     case "preparing":
       return { title: "Preparing for fast queries…", description: job?.message ?? "Materializing rows in DuckDB for fast local queries.", icon: LoaderCircle, tone: "text-warning", active: true };
     case "failed":
-      return { title: "Import failed", description: source.error?.message ?? job?.error?.message ?? "The source could not be prepared.", icon: AlertTriangle, tone: "text-destructive", active: false };
+      return { title: "Import failed", description: presentAppError(source.error ?? job?.error, "The source could not be prepared.").message, icon: AlertTriangle, tone: "text-destructive", active: false };
     case "cancelled":
       return { title: "Import cancelled", description: job?.message ?? "The source can be imported again with different options.", icon: Ban, tone: "text-warning", active: false };
     case "no-results":
@@ -42,6 +43,20 @@ function detailsFor(state: SourceViewState, source: SourceInfo, job?: Job): Stat
     case "ready":
       return null;
   }
+}
+
+function FailureDetails({ error, centered = false }: { error: AppErrorPresentation; centered?: boolean }) {
+  if (!error.stage && !error.suggestion && !error.shortErrorRef && !error.logPath) return null;
+  return (
+    <div className={cn("mt-1 grid gap-0.5 text-[10px] leading-4 text-muted-foreground", centered && "justify-items-center")}>
+      {error.suggestion && <p>{error.suggestion}</p>}
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2", centered && "justify-center")}>
+        {error.stage && <span>Stage: <code className="text-foreground">{error.stage}</code></span>}
+        {error.shortErrorRef && <span>Reference: <code className="text-foreground" title={error.errorRef}>{error.shortErrorRef}</code></span>}
+        {error.logPath && <span className="min-w-0">Log: <code className="break-all text-foreground" title={error.logPath}>{error.logPath}</code></span>}
+      </div>
+    </div>
+  );
 }
 
 function elapsedFor(job?: Job, elapsed?: string): string | undefined {
@@ -66,6 +81,7 @@ export function SourceStateBanner({ source, job, elapsed, onCancel, onRetry, cla
   if (!details) return null;
   const Icon = details.icon;
   const elapsedLabel = elapsedFor(job, elapsed);
+  const failure = state === "failed" ? presentAppError(source.error ?? job?.error, details.description, job?.stage) : undefined;
 
   return (
     <div
@@ -77,10 +93,13 @@ export function SourceStateBanner({ source, job, elapsed, onCancel, onRetry, cla
     >
       <Icon className={cn("size-3.5 shrink-0", details.tone, state === "preparing" && "animate-spin")} aria-hidden="true" />
       <div className="min-w-0 flex-1 text-[11px]">
-        <span className="font-medium text-foreground">{details.title}</span>
-        <span className="ml-1.5 text-muted-foreground">{details.description}</span>
+        <div>
+          <span className="font-medium text-foreground">{details.title}</span>
+          <span className="ml-1.5 text-muted-foreground">{details.description}</span>
+        </div>
+        {failure && <FailureDetails error={failure} />}
       </div>
-      {job?.stage && job.stage !== job.message && <code className="hidden max-w-40 truncate text-[9px] text-muted-foreground xl:block">{job.stage}</code>}
+      {!failure && job?.stage && job.stage !== job.message && <code className="hidden max-w-40 truncate text-[9px] text-muted-foreground xl:block">{job.stage}</code>}
       {elapsedLabel && (
         <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground"><Clock3 className="size-3" aria-hidden="true" /> {elapsedLabel}</span>
       )}
@@ -95,6 +114,7 @@ export function SourceStateOverlay({ source, job, elapsed, onCancel, onRetry, cl
   if (!details) return null;
   const Icon = details.icon;
   const elapsedLabel = elapsedFor(job, elapsed);
+  const failure = state === "failed" ? presentAppError(source.error ?? job?.error, details.description, job?.stage) : undefined;
 
   return (
     <div
@@ -110,7 +130,7 @@ export function SourceStateOverlay({ source, job, elapsed, onCancel, onRetry, cl
         </span>
         <h2 className="mt-3 text-[14px] font-semibold text-foreground">{details.title}</h2>
         <p className="mt-1 max-w-sm text-[11px] leading-5 text-muted-foreground">{details.description}</p>
-        {job?.stage && job.stage !== job.message && <code className="mt-2 rounded border border-border bg-muted px-2 py-1 text-[10px] text-muted-foreground">{job.stage}</code>}
+        {failure ? <FailureDetails error={failure} centered /> : job?.stage && job.stage !== job.message && <code className="mt-2 rounded border border-border bg-muted px-2 py-1 text-[10px] text-muted-foreground">{job.stage}</code>}
         {elapsedLabel && <span className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground"><Clock3 className="size-3" aria-hidden="true" /> Elapsed {elapsedLabel}</span>}
         <div className="mt-4"><StateAction state={state} onCancel={onCancel} onRetry={onRetry} /></div>
       </div>

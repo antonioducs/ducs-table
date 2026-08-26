@@ -8,19 +8,46 @@ export interface Project {
   updatedAt: string;
 }
 
+export type ProjectTabKind = "local" | "external" | "placeholder" | "sql";
+
 export interface ProjectTabReference {
   id: string;
-  kind: "local" | "external" | "placeholder";
+  kind: ProjectTabKind;
   title: string;
   sourceId?: string;
   relationId?: string;
   connectionId?: string;
+  documentId?: string;
   catalog?: string;
   schema?: string;
   relation?: string;
   relationType?: string;
   isResult?: boolean;
   placeholderReason?: "disconnected" | "missing";
+}
+
+export interface SQLDocument {
+  id: string;
+  title: string;
+  sql: string;
+  savedQueryId?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectTabGroup {
+  id: string;
+  tabIds: string[];
+  activeTabId?: string;
+}
+
+export type SplitDirection = "horizontal" | "vertical";
+
+export interface ProjectLayoutNode {
+  kind: "group" | "split";
+  direction?: SplitDirection;
+  size?: number;
+  groupId?: string;
+  children?: ProjectLayoutNode[];
 }
 
 export interface QueryHistoryEntry {
@@ -33,9 +60,11 @@ export interface QueryHistoryEntry {
 
 export interface ProjectSession {
   version: number;
-  sqlDraft: string;
+  documents: SQLDocument[];
   tabs: ProjectTabReference[];
-  activeTabId?: string;
+  groups: ProjectTabGroup[];
+  layout: ProjectLayoutNode;
+  activeGroupId: string;
   history: QueryHistoryEntry[];
   resultSequence: number;
 }
@@ -185,10 +214,17 @@ export interface GridResourceRef {
   relationId?: string;
 }
 
+export interface AppErrorDetails extends Record<string, unknown> {
+  stage?: string;
+  suggestion?: string;
+  errorRef?: string;
+  logPath?: string;
+}
+
 export interface AppErrorInfo {
   code?: string;
   message: string;
-  details?: Record<string, unknown>;
+  details?: AppErrorDetails;
 }
 
 export interface SavedQuery {

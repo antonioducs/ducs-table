@@ -177,16 +177,16 @@ func (m *Manager) run(j *job, task Task) {
 	m.mu.Lock()
 	finished := time.Now().UTC()
 	j.snapshot.FinishedAt = &finished
-	if errors.Is(err, context.Canceled) || j.ctx.Err() != nil {
+	if err == nil {
+		j.snapshot.State = StateCompleted
+		j.snapshot.Progress = 1
+		j.snapshot.Result = result
+	} else if errors.Is(err, context.Canceled) || j.ctx.Err() != nil {
 		j.snapshot.State = StateCancelled
 		j.snapshot.Error = models.NewError(models.CodeCancelled, "Job was cancelled", nil)
 	} else if err != nil {
 		j.snapshot.State = StateFailed
 		j.snapshot.Error = models.AsAppError(err)
-	} else {
-		j.snapshot.State = StateCompleted
-		j.snapshot.Progress = 1
-		j.snapshot.Result = result
 	}
 	snapshot = j.snapshot
 	m.mu.Unlock()

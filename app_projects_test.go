@@ -97,13 +97,16 @@ func TestOpenProjectRestoresDisconnectedExternalTabFromIdentity(t *testing.T) {
 	}
 	active := "external:orders"
 	session := models.ProjectSession{
-		Version: models.ProjectSessionVersion,
+		Version:   models.ProjectSessionVersion,
+		Documents: []models.SQLDocument{},
 		Tabs: []models.ProjectTabReference{{
 			ID: active, Kind: models.ProjectTabKindExternal, Title: "Orders", ConnectionID: connection.ID,
 			RelationID: "stale-client-id", Catalog: connection.CatalogName, Schema: "sales", Relation: `Order "Lines"`, RelationType: "table",
 		}},
-		ActiveTabID: &active,
-		History:     []models.QueryHistoryEntry{},
+		Groups:        []models.ProjectTabGroup{{ID: "group-a", TabIDs: []string{active}, ActiveTabID: &active}},
+		Layout:        models.ProjectLayoutNode{Kind: models.ProjectLayoutKindGroup, GroupID: "group-a", Size: 100},
+		ActiveGroupID: "group-a",
+		History:       []models.QueryHistoryEntry{},
 	}
 	if err := ws.SaveSession(ctx, project.ID, session); err != nil {
 		t.Fatal(err)

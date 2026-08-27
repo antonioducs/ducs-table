@@ -15,7 +15,7 @@ Keep pull requests focused. Do not combine unrelated refactors, generated-file c
 Development currently targets macOS and the machine's native architecture. You need:
 
 - macOS and Xcode Command Line Tools;
-- Go 1.25 or newer;
+- Go 1.25.13 or newer;
 - Node.js 22 or newer and npm; and
 - Wails v2.15.x.
 

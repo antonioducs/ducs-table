@@ -61,7 +61,7 @@ UI warns when rows may shift because no stable key exists.
 Requirements:
 
 - macOS on the architecture being built;
-- Go 1.25 or newer;
+- Go 1.25.13 or newer;
 - Node.js 22 or newer and npm;
 - Xcode Command Line Tools; and
 - Wails v2.15.x.

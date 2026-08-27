@@ -63,6 +63,15 @@ body {
   user-select: none;
 }
 
+input,
+textarea,
+[contenteditable="true"],
+.cm-content,
+.ducs-selectable-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 button,
 input,
 textarea {
@@ -251,6 +260,21 @@ pre {
 
 .cm-scroller {
   overflow: auto;
+}
+
+.ducs-sql-editor,
+.ducs-sql-editor .cm-editor {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ducs-sql-editor .cm-scroller {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .cm-gutters {

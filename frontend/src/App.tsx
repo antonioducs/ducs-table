@@ -1066,7 +1066,7 @@ export default function App() {
         <SQLEditorTab
           document={document}
           onChange={(value) => store.updateDocument(projectId, document.id, { sql: value })}
-          onRun={() => void runQuery({ documentId: document.id })}
+          onRun={(sql) => void runQuery({ documentId: document.id, sql })}
           onSave={() => { setSaveQueryDocumentId(document.id); setSaveQueryOpen(true); }}
           running={runningDocuments.has(document.id)}
           disabled={readySources.length === 0 && !connections.some((connection) => connection.status === "connected")}

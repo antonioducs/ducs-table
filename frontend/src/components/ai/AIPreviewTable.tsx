@@ -15,7 +15,7 @@ function formatCell(value: unknown): string {
 
 export function AIPreviewTable({ result }: { result: AIPreviewResult }) {
   return (
-    <div className="mt-2 overflow-hidden rounded-md border border-border bg-card" aria-label="Query preview">
+    <div className="ducs-selectable-text mt-2 overflow-hidden rounded-md border border-border bg-card" aria-label="Query preview">
       <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-2 py-1 text-[9px] text-muted-foreground">
         <span>{result.rows.length} {result.rows.length === 1 ? "row" : "rows"}</span>
         <span aria-hidden="true">·</span>

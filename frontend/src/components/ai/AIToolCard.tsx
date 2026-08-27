@@ -26,7 +26,7 @@ export function AIToolCard({ tool, ...sqlActions }: { tool: AIToolActivity } & O
       {sql && <AISQLCard sql={sql} {...sqlActions} />}
       {preview && <AIPreviewTable result={preview} />}
       {tool.status !== "running" && tool.output !== undefined && !preview && (!sql || tool.name === "preview_query") && (
-        <details className="mt-1 text-muted-foreground"><summary className="cursor-pointer">Tool output</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify(tool.output, null, 2)}</pre></details>
+        <details className="mt-1 text-muted-foreground"><summary className="cursor-pointer">Tool output</summary><pre className="ducs-selectable-text mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify(tool.output, null, 2)}</pre></details>
       )}
     </div>
   );

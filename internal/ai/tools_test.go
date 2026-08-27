@@ -3,9 +3,14 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"ducs-table/internal/apppaths"
 	"ducs-table/internal/connections"
+	"ducs-table/internal/database"
 	"ducs-table/internal/models"
 )
 
@@ -79,5 +84,32 @@ func TestPreviewConversationGrantStillValidatesEveryQuery(t *testing.T) {
 	case unexpected := <-emitted:
 		t.Fatalf("conversation authorization emitted another approval: %#v", unexpected)
 	default:
+	}
+}
+
+func TestDuckDBPreviewReturnsUsefulSafeSQLDiagnostic(t *testing.T) {
+	paths, err := apppaths.ResolveAt(filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.SQL().ExecContext(context.Background(), `CREATE TABLE data.ai_preview_fixture(total INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = NewDuckDBPreviewer(db, nil).Preview(context.Background(), `SELECT missing_total FROM data.ai_preview_fixture`)
+	var appErr *models.AppError
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeInvalidQuery {
+		t.Fatalf("error = %#v", err)
+	}
+	if appErr.Message == "Query preview could not be executed" || !strings.Contains(appErr.Message, "missing_total") {
+		t.Fatalf("diagnostic = %q", appErr.Message)
+	}
+	if strings.Contains(appErr.Message, "SELECT missing_total") {
+		t.Fatalf("SQL excerpt was exposed: %q", appErr.Message)
 	}
 }

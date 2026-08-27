@@ -6,7 +6,7 @@ export function AIApprovalCard({ approval, busy, onRespond }: { approval: AIAppr
   const input = approval.input && typeof approval.input === "object" ? approval.input as Record<string, unknown> : {};
   const sql = typeof input.sql === "string" ? input.sql : undefined;
   return (
-    <div className="my-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[10px]">
+    <div className="ducs-selectable-text my-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[10px]">
       <div className="flex items-center gap-1.5 font-semibold text-amber-300"><ShieldAlert className="size-3.5" /> Approval required</div>
       <p className="mt-1 leading-4 text-foreground">{approval.summary}</p>
       <p className="mt-1 font-mono text-muted-foreground">{approval.tool}</p>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ducs-table/internal/apppaths"
@@ -109,6 +110,23 @@ func TestRunJoinSaveCopyMoveAndClose(t *testing.T) {
 	var appErr *models.AppError
 	if !errors.As(err, &appErr) || appErr.Code != models.CodeInvalidArgument {
 		t.Fatalf("persistent source was not protected from CloseResult: %#v", err)
+	}
+}
+
+func TestRunReturnsUsefulDuckDBDiagnostic(t *testing.T) {
+	db, _, projectID, people, _ := queryFixture(t)
+	defer db.Close()
+
+	_, err := New(db).Run(context.Background(), projectID, `SELECT missing_total FROM `+database.QuoteQualified(people.Schema, people.SQLName))
+	var appErr *models.AppError
+	if !errors.As(err, &appErr) || appErr.Code != models.CodeInvalidQuery {
+		t.Fatalf("error = %#v", err)
+	}
+	if appErr.Message == "Query could not be executed" || !strings.Contains(appErr.Message, "missing_total") {
+		t.Fatalf("diagnostic = %q", appErr.Message)
+	}
+	if strings.Contains(appErr.Message, "SELECT missing_total") {
+		t.Fatalf("SQL excerpt was exposed: %q", appErr.Message)
 	}
 }
 

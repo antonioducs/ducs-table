@@ -90,6 +90,7 @@ describe("workbench editor group", () => {
     });
     // jsdom drops pointer coordinates from DragEvent, so they are set explicitly.
     fireEvent(surface, withPointer(createEvent.dragOver(surface, dragEventData("tab-external")), 380, 20));
+    expect(surface.querySelector('[data-drop-edge="horizontal"]')).toBeInTheDocument();
     fireEvent(surface, withPointer(createEvent.drop(surface, dragEventData("tab-external")), 380, 20));
     expect(onDropSplit).toHaveBeenCalledWith("tab-external", "horizontal");
   });

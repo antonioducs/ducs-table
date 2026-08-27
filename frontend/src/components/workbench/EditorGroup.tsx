@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { FileCode2, FolderOpen } from "lucide-react";
 import type { AppTab } from "@/stores/app-store";
 import type { ProjectTabGroup, SplitDirection } from "@/types";
@@ -23,6 +23,8 @@ export interface EditorGroupProps {
   /** Dropping on an edge splits the group in that direction. */
   onDropSplit: (tabId: string, direction: SplitDirection) => void;
   onOpenFiles?: () => void;
+  contentHost?: HTMLDivElement;
+  hasPersistentContent?: boolean;
 }
 
 type EdgeZone = SplitDirection | undefined;
@@ -42,17 +44,73 @@ export function EditorGroup({
   onDropTab,
   onDropSplit,
   onOpenFiles,
+  contentHost,
+  hasPersistentContent = false,
 }: EditorGroupProps) {
   const [edge, setEdge] = useState<EdgeZone>();
+  const contentSurfaceRef = useRef<HTMLDivElement>(null);
+  const onDropTabRef = useRef(onDropTab);
+  const onDropSplitRef = useRef(onDropSplit);
+  const tabCountRef = useRef(tabs.length);
+  onDropTabRef.current = onDropTab;
+  onDropSplitRef.current = onDropSplit;
+  tabCountRef.current = tabs.length;
 
-  const edgeFor = (event: React.DragEvent): EdgeZone => {
-    const bounds = event.currentTarget.getBoundingClientRect();
+  const edgeFor = (event: DragEvent, surface: HTMLDivElement): EdgeZone => {
+    const bounds = surface.getBoundingClientRect();
     const right = (event.clientX - bounds.left) / bounds.width > 0.72;
     const bottom = (event.clientY - bounds.top) / bounds.height > 0.72;
     if (right) return "horizontal";
     if (bottom) return "vertical";
     return undefined;
   };
+
+  useLayoutEffect(() => {
+    const surface = contentSurfaceRef.current;
+    if (!surface) return;
+    if (contentHost) surface.appendChild(contentHost);
+
+    const isTabDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes(TAB_DRAG_TYPE);
+    const accept = (event: DragEvent) => {
+      if (!isTabDrag(event)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      return true;
+    };
+    const enter = (event: DragEvent) => {
+      if (accept(event)) setEdge(edgeFor(event, surface));
+    };
+    const over = (event: DragEvent) => {
+      if (accept(event)) setEdge(edgeFor(event, surface));
+    };
+    const leave = (event: DragEvent) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && surface.contains(next)) return;
+      setEdge(undefined);
+    };
+    const drop = (event: DragEvent) => {
+      if (!accept(event)) return;
+      const tabId = event.dataTransfer?.getData(TAB_DRAG_TYPE) ?? "";
+      const zone = edgeFor(event, surface);
+      setEdge(undefined);
+      if (!tabId) return;
+      if (zone) onDropSplitRef.current(tabId, zone);
+      else onDropTabRef.current(tabId, tabCountRef.current);
+    };
+
+    surface.addEventListener("dragenter", enter);
+    surface.addEventListener("dragover", over);
+    surface.addEventListener("dragleave", leave);
+    surface.addEventListener("drop", drop);
+    return () => {
+      surface.removeEventListener("dragenter", enter);
+      surface.removeEventListener("dragover", over);
+      surface.removeEventListener("dragleave", leave);
+      surface.removeEventListener("drop", drop);
+      if (contentHost?.parentNode === surface) surface.removeChild(contentHost);
+    };
+  }, [contentHost]);
 
   return (
     <section
@@ -64,11 +122,6 @@ export function EditorGroup({
         focused && "ring-1 ring-inset ring-primary/25",
       )}
       onFocusCapture={onFocus}
-      onDragEnter={(event) => {
-        if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
-        event.preventDefault();
-        event.stopPropagation();
-      }}
     >
       <TabsBar
         tabs={tabs}
@@ -84,29 +137,14 @@ export function EditorGroup({
         onFocus={onFocus}
       />
       <div
+        ref={contentSurfaceRef}
+        data-tab-content-surface={group.id}
         className="relative min-h-0 flex-1"
         onMouseDown={onFocus}
-        onDragOver={(event) => {
-          if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
-          event.preventDefault();
-          event.stopPropagation();
-          setEdge(edgeFor(event));
-        }}
-        onDragLeave={() => setEdge(undefined)}
-        onDrop={(event) => {
-          if (!event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
-          event.preventDefault();
-          event.stopPropagation();
-          const tabId = event.dataTransfer.getData(TAB_DRAG_TYPE);
-          const zone = edge;
-          setEdge(undefined);
-          if (!tabId) return;
-          if (zone) onDropSplit(tabId, zone);
-          else onDropTab(tabId, tabs.length);
-        }}
       >
-        {children ?? (
-          <div className="grid h-full place-items-center bg-background text-center">
+        {contentHost ? null : children}
+        {!children && !hasPersistentContent && (
+          <div className="absolute inset-0 grid place-items-center bg-background text-center">
             <div>
               <p className="text-[12px] text-foreground">This split is empty</p>
               <p className="mt-1 text-[11px] text-muted-foreground">
@@ -122,8 +160,9 @@ export function EditorGroup({
         {edge && (
           <div
             aria-hidden="true"
+            data-drop-edge={edge}
             className={cn(
-              "pointer-events-none absolute bg-primary/20 ring-1 ring-primary/50",
+              "pointer-events-none absolute z-20 bg-primary/20 ring-1 ring-primary/50",
               edge === "horizontal" ? "inset-y-0 right-0 w-1/2" : "inset-x-0 bottom-0 h-1/2",
             )}
           />

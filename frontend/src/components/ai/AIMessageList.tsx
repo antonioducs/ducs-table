@@ -1,13 +1,16 @@
 import { useEffect, useRef } from "react";
-import { Bot, ChevronRight, User } from "lucide-react";
+import { Bot, ChevronRight, Copy, User } from "lucide-react";
+import { toast } from "sonner";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { AIApprovalDecision, AIApprovalRequest, AIMessage } from "@/types";
 import type { AIToolActivity } from "@/stores/ai-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { bridge } from "@/lib/bridge";
+import { copyText } from "@/lib/clipboard";
 import { AISQLCard, type AISQLCardProps } from "./AISQLCard";
 import { AIToolCard } from "./AIToolCard";
 import { AIApprovalCard } from "./AIApprovalCard";
@@ -27,6 +30,15 @@ function Markdown({ children, sqlActions }: { children: string; sqlActions: Omit
     },
   };
   return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components}>{children}</ReactMarkdown>;
+}
+
+async function copyMessage(content: string): Promise<void> {
+  try {
+    await copyText(content);
+    toast.success("Message copied");
+  } catch {
+    toast.error("Could not copy message");
+  }
 }
 
 export function AIMessageList({ messages, tools, approvals, approvalBusy, onApproval, ...sqlActions }: {
@@ -52,10 +64,21 @@ export function AIMessageList({ messages, tools, approvals, approvalBusy, onAppr
         {messages.map((message) => {
           const messageTools = tools.filter((tool) => tool.messageId === message.id);
           return (
-            <article key={message.id} className={cn("text-[11px]", message.role === "user" && "ml-5 rounded-lg bg-primary/10 p-2.5")}>
+            <article key={message.id} className={cn("ducs-selectable-text text-[11px]", message.role === "user" && "ml-5 rounded-lg bg-primary/10 p-2.5")}>
               <div className="mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {message.role === "user" ? <User className="size-3" /> : <Bot className="size-3 text-primary" />}{message.role}
                 {message.status === "streaming" && <span className="ducs-pulse ml-1 size-1.5 rounded-full bg-primary" />}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-auto size-5"
+                  aria-label={`Copy ${message.role} message`}
+                  title="Copy message"
+                  disabled={!message.content}
+                  onClick={() => void copyMessage(message.content)}
+                >
+                  <Copy className="size-3" aria-hidden="true" />
+                </Button>
               </div>
               {message.reasoning && <details className="mb-2 rounded border border-border bg-muted/20 p-1.5 text-[10px] text-muted-foreground"><summary className="flex cursor-pointer items-center gap-1"><ChevronRight className="size-3" />Reasoning</summary><p className="mt-1 whitespace-pre-wrap">{message.reasoning}</p></details>}
               {message.content && <div className="ai-markdown break-words leading-5"><Markdown sqlActions={sqlActions}>{message.content}</Markdown></div>}

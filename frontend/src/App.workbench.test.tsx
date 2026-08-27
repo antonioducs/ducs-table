@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap, ProjectSession } from "@/types";
+import { TAB_DRAG_TYPE } from "@/components/layout/TabsBar";
 
 const bridgeHarness = vi.hoisted(() => {
   let resultSequence = 0;
@@ -54,17 +55,57 @@ const bridgeHarness = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/components/data-grid/DataGrid", () => ({
-  __esModule: true,
-  default: ({ source }: { source: { displayName: string } }) => <div data-testid="grid">{source.displayName} grid</div>,
-  DataGrid: ({ source }: { source: { displayName: string } }) => <div data-testid="grid">{source.displayName} grid</div>,
+const gridRenderHarness = vi.hoisted(() => ({
+  mounts: vi.fn(),
+  unmounts: vi.fn(),
+  reset() {
+    this.mounts.mockClear();
+    this.unmounts.mockClear();
+  },
 }));
 
-vi.mock("@uiw/react-codemirror", () => ({
-  default: ({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; [key: string]: unknown }) => (
-    <textarea aria-label={String(props["aria-label"] ?? "SQL query")} value={value} onChange={(event) => onChange(event.target.value)} />
-  ),
+const editorRenderHarness = vi.hoisted(() => ({
+  mounts: vi.fn(),
+  unmounts: vi.fn(),
+  reset() {
+    this.mounts.mockClear();
+    this.unmounts.mockClear();
+  },
 }));
+
+vi.mock("@/components/data-grid/DataGrid", async () => {
+  const { useEffect } = await vi.importActual<typeof import("react")>("react");
+  function MockDataGrid({ source, initialViewState, onViewStateChange }: { source: { displayName: string }; initialViewState?: { filters: unknown[] }; onViewStateChange?: (view: { sorts: never[]; filters: { column: string; type: "text"; operator: "equals"; value: string }[]; visibleColumns: string[] }) => void }) {
+    useEffect(() => {
+      gridRenderHarness.mounts();
+      return () => gridRenderHarness.unmounts();
+    }, []);
+    return (
+      <div data-testid="grid" data-initial-filter-count={initialViewState?.filters.length ?? 0}>
+        {source.displayName} grid
+        <button type="button" aria-label="Set test grid filter" onClick={() => onViewStateChange?.({ sorts: [], filters: [{ column: "name", type: "text", operator: "equals", value: "Ada" }], visibleColumns: ["name"] })}>Set filter</button>
+      </div>
+    );
+  }
+  return {
+    __esModule: true,
+    default: MockDataGrid,
+  };
+});
+
+vi.mock("@uiw/react-codemirror", async () => {
+  const { useEffect } = await vi.importActual<typeof import("react")>("react");
+  function MockCodeMirror({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; [key: string]: unknown }) {
+    useEffect(() => {
+      editorRenderHarness.mounts();
+      return () => editorRenderHarness.unmounts();
+    }, []);
+    return <textarea aria-label={String(props["aria-label"] ?? "SQL query")} value={value} onChange={(event) => onChange(event.target.value)} />;
+  }
+  return {
+    default: MockCodeMirror,
+  };
+});
 
 const session: ProjectSession = {
   version: 2,
@@ -139,6 +180,8 @@ beforeEach(() => {
   localStorage.clear();
   useAppStore.getState().reset();
   bridgeHarness.reset();
+  gridRenderHarness.reset();
+  editorRenderHarness.reset();
   bootstrap.workspace!.savedQueries = [];
   for (const name of Object.keys(bridgeHarness.handlers)) delete bridgeHarness.handlers[name];
 });
@@ -154,6 +197,23 @@ function firePointer(target: Element, type: string, values: { pointerId: number;
   fireEvent(target, event);
 }
 
+function fireTabDragOver(target: Element, clientX: number, clientY: number) {
+  const event = new Event("dragover", { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+    dataTransfer: {
+      value: {
+        types: [TAB_DRAG_TYPE],
+        files: { length: 0 },
+        getData: () => "tab-query",
+        dropEffect: "none",
+      },
+    },
+  });
+  fireEvent(target, event);
+}
+
 describe("workbench shell", () => {
   it("renders a split session with a grid and an editor side by side", async () => {
     render(<App />);
@@ -164,6 +224,89 @@ describe("workbench shell", () => {
     expect(screen.getByRole("tab", { name: "Orders" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Query 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hide sidebar" }).closest("[data-sidebar-resize-handle]")).toHaveClass("w-1");
+  });
+
+  it("moves a filtered grid between groups without remounting it", async () => {
+    render(<App />);
+    const grid = await screen.findByTestId("grid");
+    expect(grid).toHaveAttribute("data-initial-filter-count", "0");
+    expect(gridRenderHarness.mounts).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set test grid filter" }));
+    act(() => useAppStore.getState().moveTab("p1", "tab-orders", "group-sql"));
+
+    await waitFor(() => expect(useAppStore.getState().projectWorkspaces.p1.session.groups.find((group) => group.id === "group-sql")?.activeTabId).toBe("tab-orders"));
+    expect(await screen.findByTestId("grid")).toHaveTextContent("Orders grid");
+    expect(gridRenderHarness.mounts).toHaveBeenCalledOnce();
+    expect(gridRenderHarness.unmounts).not.toHaveBeenCalled();
+  });
+
+  it("moves a query editor between groups without remounting it", async () => {
+    render(<App />);
+    expect(await screen.findByRole("textbox", { name: "SQL query Query 1" })).toHaveValue("SELECT 1");
+    expect(editorRenderHarness.mounts).toHaveBeenCalledOnce();
+
+    act(() => useAppStore.getState().moveTab("p1", "tab-query", "group-data"));
+
+    await waitFor(() => expect(useAppStore.getState().projectWorkspaces.p1.session.groups.find((group) => group.id === "group-data")?.activeTabId).toBe("tab-query"));
+    expect(await screen.findByRole("textbox", { name: "SQL query Query 1" })).toHaveValue("SELECT 1");
+    expect(editorRenderHarness.mounts).toHaveBeenCalledOnce();
+    expect(editorRenderHarness.unmounts).not.toHaveBeenCalled();
+  });
+
+  it("collapses a split after its last tab closes without remounting the remaining grid", async () => {
+    render(<App />);
+    expect(await screen.findByTestId("grid")).toHaveTextContent("Orders grid");
+    expect(gridRenderHarness.mounts).toHaveBeenCalledOnce();
+
+    await userEvent.click(screen.getByRole("button", { name: "Close Query 1" }));
+
+    await waitFor(() => {
+      const current = useAppStore.getState().projectWorkspaces.p1.session;
+      expect(current.groups).toHaveLength(1);
+      expect(current.layout.kind).toBe("group");
+    });
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(screen.getByTestId("grid")).toHaveTextContent("Orders grid");
+    expect(gridRenderHarness.mounts).toHaveBeenCalledOnce();
+    expect(gridRenderHarness.unmounts).not.toHaveBeenCalled();
+  });
+
+  it("shows the edge overlay when a tab is dragged over persistent grid content", async () => {
+    render(<App />);
+    const grid = await screen.findByTestId("grid");
+    const surface = grid.closest('[data-group-id]')?.querySelector<HTMLElement>('[data-tab-content-surface]');
+    expect(surface).toBeTruthy();
+    vi.spyOn(surface!, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 200, width: 400, height: 200, toJSON: () => ({}),
+    });
+
+    fireTabDragOver(grid, 380, 20);
+
+    expect(surface!.querySelector('[data-drop-edge="horizontal"]')).toBeInTheDocument();
+  });
+
+  it("prevents native file navigation when a nested surface swallows drop events", async () => {
+    render(<App />);
+    const surface = await screen.findByTestId("grid");
+    surface.addEventListener("dragover", (event) => event.stopPropagation());
+    surface.addEventListener("drop", (event) => event.stopPropagation());
+
+    const fileDragEvent = (type: "dragover" | "drop") => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", {
+        value: { files: { length: 1 }, types: ["Files"] },
+      });
+      return event;
+    };
+    const dragOver = fileDragEvent("dragover");
+    const drop = fileDragEvent("drop");
+
+    fireEvent(surface, dragOver);
+    fireEvent(surface, drop);
+
+    expect(dragOver.defaultPrevented).toBe(true);
+    expect(drop.defaultPrevented).toBe(true);
   });
 
   it("opens an extra query tab in the query group without losing the previous one", async () => {

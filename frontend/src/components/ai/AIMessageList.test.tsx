@@ -6,9 +6,16 @@ describe("AIMessageList", () => {
   it("sanitizes markdown and exposes SQL actions", () => {
     const onReplace = vi.fn();
     const message = { id: "m1", conversationId: "c1", sequence: 1, role: "assistant" as const, content: "Hello <script>alert(1)</script>\n```sql\nselect * from orders\n```", status: "complete" as const, createdAt: "", updatedAt: "" };
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     const { container } = render(<AIMessageList messages={[message]} tools={[]} approvals={[]} onApproval={vi.fn()} onReplace={onReplace} onAppend={vi.fn()} onExecute={vi.fn()} />);
 
     expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("article")).toHaveClass("ducs-selectable-text");
+    fireEvent.click(screen.getByRole("button", { name: "Copy assistant message" }));
+    expect(writeText).toHaveBeenCalledWith(message.content);
+    fireEvent.click(screen.getByRole("button", { name: "Copy SQL" }));
+    expect(writeText).toHaveBeenCalledWith("select * from orders");
     fireEvent.click(screen.getByRole("button", { name: "Replace SQL editor" }));
     expect(onReplace).toHaveBeenCalledWith("select * from orders");
   });

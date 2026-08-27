@@ -69,12 +69,8 @@ Requirements:
 ```sh
 git clone https://github.com/antonioducs/ducs-table.git
 cd ducs-table
-npm ci
-npm --prefix frontend ci
-npm --prefix ai-sidecar ci
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-export PATH="$PATH:$(go env GOPATH)/bin"
-npm run dev
+make install
+make dev
 ```
 
 Build a native development application:

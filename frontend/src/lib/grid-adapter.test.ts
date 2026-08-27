@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adaptFilterModel, adaptSortModel } from "./grid-adapter";
+import { adaptFilterModel, adaptSortModel, restoreFilterModel } from "./grid-adapter";
 import type { ColumnInfo } from "@/types";
 
 const columns: ColumnInfo[] = [
@@ -36,5 +36,14 @@ describe("AG Grid adapter", () => {
   it("ignores unsupported operators", () => {
     expect(adaptFilterModel({ name: { filterType: "text", type: "rawSql", filter: "1=1" } }, columns)).toEqual([]);
   });
-});
 
+  it("restores normalized filters when a grid is remounted", () => {
+    const filters = [
+      { column: "name", type: "text" as const, operator: "contains" as const, value: "Ana" },
+      { column: "total", type: "number" as const, operator: "inRange" as const, value: 10, valueTo: 100 },
+      { column: "created_at", type: "date" as const, operator: "greaterThanOrEqual" as const, value: "2026-01-01" },
+    ];
+
+    expect(adaptFilterModel(restoreFilterModel(filters, columns), columns)).toEqual(filters);
+  });
+});

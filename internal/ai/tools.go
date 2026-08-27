@@ -12,6 +12,7 @@ import (
 	"ducs-table/internal/connections"
 	"ducs-table/internal/database"
 	"ducs-table/internal/models"
+	queryservice "ducs-table/internal/query"
 )
 
 const (
@@ -68,14 +69,14 @@ func ToolSpecs() []ToolSpec {
 	}
 	stringProperty := map[string]any{"type": "string"}
 	return []ToolSpec{
-		{Name: "list_project_sources", Description: "List local tables and query results in the active project.", InputSchema: object(map[string]any{})},
+		{Name: "list_project_sources", Description: "List local tables and query results in the active project, including exact column names and DuckDB types. Inspect this before writing local-table SQL.", InputSchema: object(map[string]any{})},
 		{Name: "list_connections", Description: "List sanitized database connections attached to the active project.", InputSchema: object(map[string]any{})},
 		{Name: "list_schemas", Description: "List schemas for one connected project database.", InputSchema: object(map[string]any{"connectionId": stringProperty}, "connectionId")},
 		{Name: "list_relations", Description: "List a bounded page of relations in a project connection schema.", InputSchema: object(map[string]any{"connectionId": stringProperty, "schema": stringProperty, "offset": map[string]any{"type": "integer", "minimum": 0}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxRelationPage}}, "connectionId", "schema"), DeferLoading: true},
 		{Name: "describe_relation", Description: "Describe columns and ordering for a relation discovered with list_relations.", InputSchema: object(map[string]any{"relationId": stringProperty}, "relationId")},
 		{Name: "validate_sql", Description: "Validate read-only DuckDB SQL against the active project scope.", InputSchema: object(map[string]any{"sql": stringProperty}, "sql")},
 		{Name: "propose_sql", Description: "Return SQL after applying the active project's safety policy; this never executes it.", InputSchema: object(map[string]any{"sql": stringProperty}, "sql")},
-		{Name: "preview_query", Description: "Run a read-only, non-materialized data preview capped by rows, bytes, and timeout. The host obtains one-time or conversation-scoped user authorization before execution.", InputSchema: object(map[string]any{"sql": stringProperty}, "sql")},
+		{Name: "preview_query", Description: "Run a read-only, non-materialized data preview capped by rows, bytes, and timeout. Inspect relation columns/types first. If a SQL diagnostic is returned, correct the SQL and retry (at most twice). The host obtains one-time or conversation-scoped user authorization before execution.", InputSchema: object(map[string]any{"sql": stringProperty}, "sql")},
 	}
 }
 
@@ -307,7 +308,7 @@ func (p *DuckDBPreviewer) Preview(ctx context.Context, validatedSQL string) (Pre
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return PreviewResult{}, models.NewError(models.CodeCancelled, "Query preview exceeded the time limit", map[string]any{"timeoutSeconds": int(maxToolTimeout.Seconds())})
 		}
-		return PreviewResult{}, models.NewError(models.CodeInvalidQuery, "Query preview could not be executed", nil)
+		return PreviewResult{}, queryservice.ExecutionError(err, "Query preview could not be executed")
 	}
 	return result, nil
 }

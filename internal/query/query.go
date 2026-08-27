@@ -96,7 +96,7 @@ func (s *Service) Run(ctx context.Context, projectID, userSQL string) (QueryResu
 		if errors.As(err, &appErr) {
 			return QueryResultInfo{}, appErr
 		}
-		return QueryResultInfo{}, models.WrapError(models.CodeInvalidQuery, "Query could not be executed", err, nil)
+		return QueryResultInfo{}, queryExecutionError(err)
 	}
 	duration := time.Since(started)
 	return QueryResultInfo{

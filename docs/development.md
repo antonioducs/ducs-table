@@ -29,21 +29,19 @@ xcode-select -p
 
 ## Reproducible setup
 
-The root, frontend, and sidecar each have a committed npm lockfile. Install exactly those dependency graphs:
+The root, frontend, and sidecar each have a committed npm lockfile. Install exactly those dependency graphs and the pinned Wails CLI:
 
 ```sh
-npm ci
-npm --prefix frontend ci
-npm --prefix ai-sidecar ci
+make install
 ```
 
 Start development mode from the repository root:
 
 ```sh
-npm run dev
+make dev
 ```
 
-This compiles the AI sidecar and starts `wails dev`; Wails runs the frontend Vite watcher. The sidecar process itself starts lazily when an AI operation needs it.
+`make dev` adds the Go bin directory to the command's `PATH`, compiles the AI sidecar, and starts `wails dev`; Wails runs the frontend Vite watcher. The sidecar process itself starts lazily when an AI operation needs it. The underlying `npm run dev` command remains available when Wails is already on your shell `PATH`.
 
 ## Repository structure
 

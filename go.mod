@@ -4,7 +4,7 @@ go 1.25.13
 
 require (
 	github.com/99designs/keyring v1.2.2
-	github.com/duckdb/duckdb-go/v2 v2.5.6
+	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/wailsapp/wails/v2 v2.15.0
 	github.com/xuri/excelize/v2 v2.11.0
 )
@@ -15,12 +15,12 @@ require (
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.3.5 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.5 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.5 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.5 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.5 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.5 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.10505.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10505.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10505.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10505.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10505.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10505.0 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect

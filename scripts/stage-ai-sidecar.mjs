@@ -18,6 +18,26 @@ async function requirePath(candidate, hint) {
 
 await requirePath(path.join(source, 'dist', 'index.js'), 'Run npm run ai:build after installing the sidecar dependencies.')
 await requirePath(path.join(source, 'node_modules'), 'Run npm run ai:install first.')
+await requirePath(path.join(root, 'LICENSE'), 'The Duc\'s Table license must be present before packaging.')
+await requirePath(path.join(root, 'NOTICE'), 'The Duc\'s Table attribution notice must be present before packaging.')
+await requirePath(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'Third-party notices must be present before packaging.')
+
+const nodeRoot = path.dirname(path.dirname(process.execPath))
+const nodeLicenseCandidates = [
+  path.join(nodeRoot, 'LICENSE'),
+  path.join(nodeRoot, 'share', 'doc', 'node', 'LICENSE'),
+]
+let nodeLicense
+for (const candidate of nodeLicenseCandidates) {
+  try {
+    await access(candidate, constants.F_OK)
+    nodeLicense = candidate
+    break
+  } catch {
+    // Try the next layout used by official, nvm, or package-manager installs.
+  }
+}
+if (!nodeLicense) throw new Error(`Could not find the Node.js license next to ${process.execPath}.`)
 
 const nodeVersion = Number(process.versions.node.split('.')[0])
 if (nodeVersion < 22) throw new Error(`Node 22 or newer is required; staging is running on ${process.version}.`)
@@ -31,6 +51,10 @@ await Promise.all([
   copyFile(path.join(source, 'package.json'), path.join(stage, 'package.json')),
   copyFile(path.join(source, 'package-lock.json'), path.join(stage, 'package-lock.json')),
   copyFile(process.execPath, path.join(stage, 'node')),
+  copyFile(path.join(root, 'LICENSE'), path.join(stage, 'DUCS_TABLE_LICENSE')),
+  copyFile(path.join(root, 'NOTICE'), path.join(stage, 'DUCS_TABLE_NOTICE')),
+  copyFile(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(stage, 'THIRD_PARTY_NOTICES.md')),
+  copyFile(nodeLicense, path.join(stage, 'NODE_LICENSE')),
 ])
 
 const nodeMode = (await stat(process.execPath)).mode & 0o777

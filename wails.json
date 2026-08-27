@@ -2,7 +2,7 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "ducs-table",
   "outputfilename": "DucsTable",
-  "frontend:install": "npm install",
+  "frontend:install": "npm ci",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
@@ -13,8 +13,8 @@
   "info": {
     "companyName": "Duc's Table",
     "productName": "Duc's Table",
-    "productVersion": "1.0.0",
-    "copyright": "Local-first data tooling",
-    "comments": "Private, local CSV, JSON and XLSX analysis powered by DuckDB."
+    "productVersion": "0.1.0",
+    "copyright": "Copyright 2026 Antonio Duarte and Duc's Table contributors",
+    "comments": "Privacy-first local data analysis powered by DuckDB."
   }
 }

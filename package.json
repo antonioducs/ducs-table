@@ -1,6 +1,19 @@
 {
   "name": "ducs-table-workspace",
+  "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antonioducs/ducs-table.git"
+  },
+  "bugs": {
+    "url": "https://github.com/antonioducs/ducs-table/issues"
+  },
+  "homepage": "https://github.com/antonioducs/ducs-table#readme",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "prebuild": "node scripts/check-build-processes.mjs",
     "dev": "npm run ai:compile && wails dev",

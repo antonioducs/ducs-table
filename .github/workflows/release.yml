@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: Sign, notarize, and publish macOS app
+    runs-on: macos-14
+    timeout-minutes: 60
+    environment: release
+    env:
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            ai-sidecar/package-lock.json
+      - name: Validate tag and version alignment
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          VERSION="$version" node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+          const expected = process.env.VERSION
+          const files = [
+            ['package.json', JSON.parse(readFileSync('package.json')).version],
+            ['frontend/package.json', JSON.parse(readFileSync('frontend/package.json')).version],
+            ['ai-sidecar/package.json', JSON.parse(readFileSync('ai-sidecar/package.json')).version],
+            ['wails.json', JSON.parse(readFileSync('wails.json')).info.productVersion],
+          ]
+          for (const [file, actual] of files) {
+            if (actual !== expected) throw new Error(`${file} has ${actual}; tag expects ${expected}`)
+          }
+          NODE
+      - name: Require Apple release credentials
+        run: |
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            test -n "${!name:-}" || { echo "Missing release secret: $name"; exit 1; }
+          done
+      - name: Import Developer ID certificate
+        run: |
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/ducs-table-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          security list-keychain -d user -s "$keychain" login.keychain-db
+          rm -f "$certificate"
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix frontend ci
+          npm --prefix ai-sidecar ci
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./...
+          npm run typecheck
+          npm run lint
+          npm run test:unit
+          npm run ai:test
+      - name: Build with Developer ID
+        env:
+          DUCS_CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: npm run build
+      - name: Verify Developer ID signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app
+          codesign -dv --verbose=4 build/bin/ducs-table.app
+      - name: Notarize and staple
+        run: |
+          ditto -c -k --keepParent build/bin/ducs-table.app "$RUNNER_TEMP/notarization.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple build/bin/ducs-table.app
+          xcrun stapler validate build/bin/ducs-table.app
+          spctl --assess --type execute --verbose=4 build/bin/ducs-table.app
+      - name: Package release assets
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="DucsTable-${version}-macOS-${RUNNER_ARCH}.zip"
+          ditto -c -k --keepParent build/bin/ducs-table.app "$archive"
+          shasum -a 256 "$archive" > "$archive.sha256"
+          echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - name: Publish GitHub Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$RELEASE_ARCHIVE" \
+            "$RELEASE_ARCHIVE.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "Duc's Table $GITHUB_REF_NAME"
+      - name: Remove temporary signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/ducs-table-signing.keychain-db" 2>/dev/null || true

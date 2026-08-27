@@ -1,0 +1,46 @@
+name: Feature proposal
+description: Propose a scoped improvement after checking the roadmap.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check ROADMAP.md and existing Discussions first. For broad design work,
+        start in Discussions before proposing implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem is not adequately solved today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful outcome, not only a UI shape.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy, security, and compatibility impact
+      description: Cover data movement, credentials, SQL, network, AI, and macOS implications.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the roadmap, Issues, and Discussions.
+          required: true
+        - label: I can help test or implement this proposal.
+          required: false

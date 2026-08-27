@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/antonioducs/ducs-table/discussions
+    about: Ask for help or discuss an idea before turning it into scoped work.
+  - name: Report a vulnerability privately
+    url: https://github.com/antonioducs/ducs-table/security/advisories/new
+    about: Never disclose suspected vulnerabilities in a public Issue.

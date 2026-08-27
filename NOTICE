@@ -1,0 +1,12 @@
+Duc's Table
+Copyright 2026 Antonio Duarte and Duc's Table contributors
+
+This product bundles OpenAI Codex, Copyright 2025 OpenAI, under the
+Apache License 2.0. The upstream Codex NOTICE also attributes code derived
+from Ratatui:
+
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+See THIRD_PARTY_NOTICES.md for additional bundled components, licenses,
+service terms, attribution, and trademark information.

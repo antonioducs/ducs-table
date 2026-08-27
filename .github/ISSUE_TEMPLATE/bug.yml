@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible problem using synthetic or sanitized data.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include credentials, real datasets,
+        production connection strings, private prompts, or unsanitized logs.
+        Report vulnerabilities privately through the Security tab.
+  - type: input
+    id: version
+    attributes:
+      label: Duc's Table version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: macOS version and architecture
+      placeholder: macOS 15.6, Apple Silicon arm64
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - File import
+        - Local tables or SQL
+        - PostgreSQL
+        - MongoDB (experimental)
+        - Projects or workbench
+        - Export
+        - Optional AI assistant
+        - Build or packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Use the smallest synthetic fixture and exact steps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized diagnostics
+      description: Remove credentials, URIs, row values, private paths, and prompts.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I searched existing Issues and Discussions.
+          required: true
+        - label: This report contains no credentials, real private data, or unsanitized logs.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

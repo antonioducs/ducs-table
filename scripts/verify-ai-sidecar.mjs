@@ -11,6 +11,12 @@ const bundle = path.resolve(process.argv[2] || process.env.DUCS_AI_BUNDLE || def
 const node = path.join(bundle, 'node')
 const entrypoint = path.join(bundle, 'dist', 'index.js')
 const launcher = path.join(bundle, 'launch-ai-sidecar')
+const bundledNotices = [
+  path.join(bundle, 'DUCS_TABLE_LICENSE'),
+  path.join(bundle, 'DUCS_TABLE_NOTICE'),
+  path.join(bundle, 'THIRD_PARTY_NOTICES.md'),
+  path.join(bundle, 'NODE_LICENSE'),
+]
 
 async function requireFile(candidate, executable = false) {
   await access(candidate, executable && process.platform !== 'win32' ? constants.X_OK : constants.F_OK)
@@ -87,7 +93,12 @@ async function smoke(home) {
   })
 }
 
-await Promise.all([requireFile(node, true), requireFile(entrypoint), requireFile(launcher, true)])
+await Promise.all([
+  requireFile(node, true),
+  requireFile(entrypoint),
+  requireFile(launcher, true),
+  ...bundledNotices.map((notice) => requireFile(notice)),
+])
 
 const manifest = JSON.parse(await readFile(path.join(bundle, 'package.json'), 'utf8'))
 for (const dependency of ['@openai/codex', '@anthropic-ai/claude-agent-sdk']) {

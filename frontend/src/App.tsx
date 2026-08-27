@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { Copy, DatabaseZap, FolderPlus, RefreshCw, Save, Trash2, WifiOff } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -82,6 +83,30 @@ function flushStoredProjectSession(projectId: string): Promise<void> {
   return flushProjectSession(projectId, useAppStore.getState().projectWorkspaces[projectId]?.session);
 }
 
+function PersistentTabContent({ tabId, active, host, children }: {
+  tabId: string;
+  active: boolean;
+  host?: HTMLDivElement;
+  children: ReactNode;
+}) {
+  const [container] = useState(() => {
+    const node = document.createElement("div");
+    node.className = "h-full min-h-0";
+    node.dataset.tabContentId = tabId;
+    return node;
+  });
+
+  useLayoutEffect(() => {
+    if (!active || !host) return;
+    host.appendChild(container);
+    return () => {
+      if (container.parentNode === host) host.removeChild(container);
+    };
+  }, [active, container, host]);
+
+  return createPortal(children, container);
+}
+
 async function validateExternalTabs(projectId: string, connection: ConnectionInfo): Promise<void> {
   const tabs = useAppStore.getState().projectWorkspaces[projectId]?.session.tabs.filter((tab) => tab.connectionId === connection.id && tab.relationId) ?? [];
   await Promise.all(tabs.map(async (tab) => {
@@ -153,7 +178,28 @@ export default function App() {
   const [catalogErrors, setCatalogErrors] = useState<Record<string, string>>({});
   const importFailureToasts = useRef(new ImportFailureToastDeduper());
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const groupContentHostsRef = useRef(new Map<string, HTMLDivElement>());
   const queryResultSourceIdsRef = useRef<Record<string, string>>({});
+
+  const groupContentHost = useCallback((projectId: string, groupId: string): HTMLDivElement => {
+    const key = `${projectId}:${groupId}`;
+    const existing = groupContentHostsRef.current.get(key);
+    if (existing) return existing;
+    const node = document.createElement("div");
+    node.className = "absolute inset-0 min-h-0";
+    node.dataset.tabContentHost = groupId;
+    groupContentHostsRef.current.set(key, node);
+    return node;
+  }, []);
+
+  useEffect(() => {
+    const activeKeys = new Set((workspace?.session.groups ?? []).map((group) => `${activeProjectId}:${group.id}`));
+    for (const [key, node] of groupContentHostsRef.current) {
+      if (activeKeys.has(key)) continue;
+      node.remove();
+      groupContentHostsRef.current.delete(key);
+    }
+  }, [activeProjectId, workspace?.session.groups]);
 
   const attachQueryResult = useCallback((outputKey: string, sourceId: string): string | undefined => {
     const previous = queryResultSourceIdsRef.current[outputKey];
@@ -893,7 +939,7 @@ export default function App() {
     const projectId = useAppStore.getState().activeProjectId;
     if (!projectId || !activeResource || !activeGridId) return;
     const columns = activeSource?.columns ?? activeRelation?.columns ?? [];
-    const viewKey = `${projectId}:${activeResource.kind}:${activeGridId}`;
+    const viewKey = activeTab ? `${projectId}:tab:${activeTab.id}` : `${projectId}:${activeResource.kind}:${activeGridId}`;
     const view = gridViews[viewKey] ?? { ...emptyView, visibleColumns: columns.map((column) => column.name) };
     if (scope === "current-view" && view.visibleColumns.length === 0) { toast.error("Show at least one column before exporting the current view."); return; }
     setExportBusy(true);
@@ -1058,6 +1104,7 @@ export default function App() {
   const renderTabContent = (tab: AppTab): ReactNode => {
     if (!activeProjectId || !workspace) return null;
     const projectId = activeProjectId;
+    const gridViewKey = `${projectId}:tab:${tab.id}`;
 
     if (tab.kind === "sql") {
       const document = workspace.session.documents.find((item) => item.id === tab.documentId);
@@ -1100,7 +1147,8 @@ export default function App() {
                 <DataGrid
                   projectId={projectId}
                   source={resultSource}
-                  onViewStateChange={(view) => setGridViews((current) => ({ ...current, [`${projectId}:source:${resultSource.id}`]: view }))}
+                  initialViewState={gridViews[gridViewKey]}
+                  onViewStateChange={(view) => setGridViews((current) => ({ ...current, [gridViewKey]: view }))}
                 />
               </div>
             </section>
@@ -1134,7 +1182,8 @@ export default function App() {
               resource={{ kind: "external", relationId: relation.id }}
               pagingStable={relation.pagingStable}
               onReconnect={() => void reconnectDatabase(connection)}
-              onViewStateChange={(view) => setGridViews((current) => ({ ...current, [`${projectId}:external:${relation.id}`]: view }))}
+              initialViewState={gridViews[gridViewKey]}
+              onViewStateChange={(view) => setGridViews((current) => ({ ...current, [gridViewKey]: view }))}
             />
           </div>
         </div>
@@ -1168,7 +1217,8 @@ export default function App() {
           <DataGrid
             projectId={projectId}
             source={view}
-            onViewStateChange={(gridView) => setGridViews((current) => ({ ...current, [`${projectId}:source:${source.id}`]: gridView }))}
+            initialViewState={gridViews[gridViewKey]}
+            onViewStateChange={(gridView) => setGridViews((current) => ({ ...current, [gridViewKey]: gridView }))}
           />
         </div>
       </div>
@@ -1205,9 +1255,9 @@ export default function App() {
               store.splitGroup(activeProjectId, group.id, direction, tabId);
             }}
             onOpenFiles={() => void openFiles()}
-          >
-            {focusedTab ? renderTabContent(focusedTab) : undefined}
-          </EditorGroup>
+            contentHost={groupContentHost(activeProjectId, group.id)}
+            hasPersistentContent={Boolean(focusedTab)}
+          />
         );
       }}
     />
@@ -1327,6 +1377,20 @@ export default function App() {
         </div>}
         <StatusBar source={activeSource} jobs={jobs} />
       </div>
+
+      {activeProjectId && workspace ? workspace.session.tabs.map((tab) => {
+        const owner = workspace.session.groups.find((group) => group.tabIds.includes(tab.id));
+        return (
+          <PersistentTabContent
+            key={`${activeProjectId}:${tab.id}`}
+            tabId={tab.id}
+            active={owner?.activeTabId === tab.id}
+            host={owner ? groupContentHost(activeProjectId, owner.id) : undefined}
+          >
+            {renderTabContent(tab)}
+          </PersistentTabContent>
+        );
+      }) : null}
 
       <JobsPanel open={jobsOpen} onOpenChange={setJobsOpen} jobs={jobs} projects={projects} activeProjectId={activeProjectId} onCancel={(job) => void cancelJob(job)} />
       {activeWorkbook && <SheetPicker workbook={activeWorkbook} open onOpenChange={(open) => { if (!open) flushForDialog(() => setWorkbooks((items) => items.filter((item) => item !== activeWorkbook))); }} onConfirm={(sheet) => void chooseSheet(sheet)} busy={sheetBusy} />}

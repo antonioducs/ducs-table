@@ -13,10 +13,7 @@ export const MAX_GROUPS = 8;
 export type LayoutPath = number[];
 
 function newId(prefix: string): string {
-  const uuid = typeof crypto?.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  return `${prefix}-${uuid}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 export const newGroupId = () => newId("group");

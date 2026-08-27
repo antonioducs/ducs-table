@@ -27,5 +27,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   denial-of-service vulnerabilities in the transitive file-keyring code path.
 - Raised the minimum Go version to 1.25.13 so builds include standard-library
   fixes used by XML import, certificate diagnostics, and URL redaction paths.
+- Removed the non-cryptographic workbench ID fallback in favor of Web Crypto
+  UUIDs.
+- Updated the transitive Echo runtime to a release that fixes an encoded-path
+  route protection bypass.
 
 [Unreleased]: https://github.com/antonioducs/ducs-table/commits/main

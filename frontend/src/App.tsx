@@ -784,15 +784,17 @@ export default function App() {
       event.preventDefault();
       setDragActive(false);
     };
-    document.addEventListener("dragenter", enter);
-    document.addEventListener("dragover", over);
-    document.addEventListener("dragleave", leave);
-    document.addEventListener("drop", drop);
+    // Capture file drags before editors/grids can stop propagation. Otherwise
+    // WebKit may handle the uncancelled drop by navigating to the local file.
+    document.addEventListener("dragenter", enter, true);
+    document.addEventListener("dragover", over, true);
+    document.addEventListener("dragleave", leave, true);
+    document.addEventListener("drop", drop, true);
     return () => {
-      document.removeEventListener("dragenter", enter);
-      document.removeEventListener("dragover", over);
-      document.removeEventListener("dragleave", leave);
-      document.removeEventListener("drop", drop);
+      document.removeEventListener("dragenter", enter, true);
+      document.removeEventListener("dragover", over, true);
+      document.removeEventListener("dragleave", leave, true);
+      document.removeEventListener("drop", drop, true);
     };
   }, []);
 

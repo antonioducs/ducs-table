@@ -1,6 +1,6 @@
 # Architecture
 
-Duc's Table is a macOS desktop application built with Go 1.25, Wails v2, React/TypeScript, DuckDB, and an optional Node 22 AI sidecar. The design keeps file parsing, SQL, credentials, remote connections, exports, and AI policy enforcement outside the webview.
+Duc's Table is a macOS desktop application built with Go 1.25.13 or newer, Wails v2, React/TypeScript, DuckDB, and an optional Node 22 AI sidecar. The design keeps file parsing, SQL, credentials, remote connections, exports, and AI policy enforcement outside the webview.
 
 ```mermaid
 flowchart LR

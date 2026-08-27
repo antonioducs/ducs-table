@@ -5,7 +5,7 @@ This guide covers a reproducible local setup for the current macOS application. 
 ## Prerequisites
 
 - macOS on the architecture being built
-- Go 1.25 or newer
+- Go 1.25.13 or newer
 - Node.js 22 or newer and npm
 - Xcode Command Line Tools
 - Wails v2.15.x

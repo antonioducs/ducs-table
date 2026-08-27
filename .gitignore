@@ -8,7 +8,8 @@ frontend/dist/
 ai-sidecar/dist/
 frontend/wailsjs/
 frontend/package.json.md5
-app-dist/
+app-dist/*
+!app-dist/.gitkeep
 
 # Go-generated artifacts
 *.test

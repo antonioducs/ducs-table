@@ -17,7 +17,10 @@
   "scripts": {
     "prebuild": "node scripts/check-build-processes.mjs",
     "dev": "npm run ai:compile && wails dev",
+    "postdev": "npm run app-dist:placeholder",
     "build": "npm run ai:build && wails build -clean && npm run ai:package && npm run ai:verify",
+    "postbuild": "npm run app-dist:placeholder",
+    "app-dist:placeholder": "node scripts/ensure-app-dist-placeholder.mjs",
     "ai:install": "npm --prefix ai-sidecar ci",
     "ai:compile": "npm --prefix ai-sidecar run build",
     "ai:build": "npm run ai:compile && node scripts/stage-ai-sidecar.mjs",

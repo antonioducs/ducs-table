@@ -31,5 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   UUIDs.
 - Updated the transitive Echo runtime to a release that fixes an encoded-path
   route protection bypass.
+- Kept the clean-clone embed placeholder stable after development and
+  production build commands.
 
 [Unreleased]: https://github.com/antonioducs/ducs-table/commits/main

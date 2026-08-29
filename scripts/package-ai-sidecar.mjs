@@ -1,6 +1,5 @@
 import { constants } from 'node:fs'
 import { access, cp, mkdir, rm } from 'node:fs/promises'
-import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,12 +25,5 @@ try {
 await rm(destination, { recursive: true, force: true })
 await mkdir(resources, { recursive: true })
 await cp(stage, destination, { recursive: true, verbatimSymlinks: true })
-
-if (process.platform === 'darwin' && process.env.DUCS_SKIP_CODESIGN !== '1') {
-  const identity = process.env.DUCS_CODESIGN_IDENTITY || '-'
-  const signed = spawnSync('codesign', ['--force', '--deep', '--sign', identity, app], { encoding: 'utf8', stdio: 'inherit' })
-  if (signed.error) throw signed.error
-  if (signed.status !== 0) throw new Error(`codesign failed with exit code ${signed.status}.`)
-}
 
 console.log(`AI sidecar copied to ${destination}`)

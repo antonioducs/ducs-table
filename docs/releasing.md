@@ -42,7 +42,11 @@ The three `npm ci` commands must succeed without lockfile drift. `npm run build`
 
 ## Build the macOS artifact
 
-The current build is architecture-native, not universal. Build and test a separate app on each macOS architecture that the release claims to support. The bundled Node executable and Codex/Claude native packages must match the artifact's architecture.
+The current build is architecture-native, not universal. The automated public
+release currently targets Apple silicon (`arm64`) on `macos-15`. Build and test a
+separate app on each additional macOS architecture that a future release claims
+to support. The bundled Node executable and Codex/Claude native packages must
+match the artifact's architecture.
 
 Before each build, stop `wails dev` and close `build/bin/ducs-table.app`. Build the final app with an Apple distribution signing identity available to the process:
 
@@ -53,20 +57,37 @@ DUCS_CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" npm run buil
 The example identity is a placeholder. Distribution signing and notarization require maintainer-controlled Apple Developer credentials, certificates, entitlements where applicable, and current Apple tooling. Keep those credentials in the CI secret store or local Keychain; never commit or print them.
 
 Before pushing a release tag, configure these secrets in the protected GitHub
-`release` environment:
+`release` environment. They intentionally use the same common CSC and App Store
+Connect naming convention as the maintainer's other release workflows:
 
-- `APPLE_CERTIFICATE_BASE64` — base64-encoded Developer ID Application `.p12`;
-- `APPLE_CERTIFICATE_PASSWORD` — password protecting that certificate;
-- `APPLE_SIGNING_IDENTITY` — full Developer ID Application identity;
-- `APPLE_ID` — Apple account used by `notarytool`;
-- `APPLE_TEAM_ID` — Apple Developer team identifier; and
-- `APPLE_APP_SPECIFIC_PASSWORD` — app-specific notarization password.
+- `CSC_LINK` — base64-encoded Developer ID Application `.p12`;
+- `CSC_KEY_PASSWORD` — password protecting that certificate;
+- `CSC_NAME` — certificate name and team identifier without the
+  `Developer ID Application:` prefix, for example `Example Name (TEAMID)`;
+- `APPLE_API_KEY` — base64-encoded App Store Connect API key `.p8`;
+- `APPLE_API_KEY_ID` — App Store Connect API key identifier; and
+- `APPLE_API_ISSUER` — App Store Connect API issuer identifier.
+
+Local signing can use the same certificate directly from Keychain and the `.p8`
+path already present on the machine. GitHub-hosted runners cannot access the
+maintainer's Keychain, so the certificate must be exported as a password-protected
+`.p12`; the workflow materializes both binary secrets into temporary files and
+removes them after the job.
 
 The release workflow stops before building if any credential is absent and does
 not publish until signature verification, notarization, stapling, and Gatekeeper
 assessment all succeed.
 
-The sidecar is copied before the build script signs the completed app bundle. After signing, submit the exact distributable to Apple's notarization service, wait for acceptance, staple the ticket where the artifact format supports it, and verify the final artifact on a clean supported Mac. At minimum, validate the completed app with:
+The sidecar is copied before the build script signs the completed app bundle.
+Release signing processes embedded Mach-O executables from the inside out,
+removes development-only entitlements from the bundled Node runtime, enables
+hardened runtime, requests secure timestamps, and signs the outer app last.
+Valid Developer ID signatures and required entitlements supplied by the Codex
+and Claude vendors are preserved. After signing, submit the exact distributable
+to Apple's notarization service with the App Store Connect API key, wait for
+acceptance, staple the ticket where the artifact format supports it, and verify
+the final artifact on a clean supported Mac. At minimum, validate the completed
+app with:
 
 ```sh
 codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app

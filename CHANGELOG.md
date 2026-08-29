@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-27
+
 ### Added
 
 - Apache-2.0 licensing, NOTICE attribution, and bundled third-party material in
@@ -33,5 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   route protection bypass.
 - Kept the clean-clone embed placeholder stable after development and
   production build commands.
+- Hardened the macOS release path with inside-out Developer ID signing, secure
+  timestamps, App Store Connect API-key notarization, and explicit rejection of
+  development-only signing entitlements.
 
 [Unreleased]: https://github.com/antonioducs/ducs-table/commits/main

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="plate" x1="140" y1="100" x2="884" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0d1a14"/>
+      <stop offset="0.55" stop-color="#060b09"/>
+      <stop offset="1" stop-color="#030605"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 250) rotate(52) scale(660)">
+      <stop stop-color="#34e07f" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#0da95a" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#0da95a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stroke" x1="230" y1="215" x2="810" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c8ffe1"/>
+      <stop offset="0.5" stop-color="#34e07f"/>
+      <stop offset="1" stop-color="#0aa155"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="250" y1="260" x2="620" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e6fff2"/>
+      <stop offset="1" stop-color="#34e07f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Plate -->
+  <rect x="72" y="72" width="880" height="880" rx="200" fill="url(#plate)"/>
+  <rect x="72" y="72" width="880" height="880" rx="200" fill="url(#glow)"/>
+  <rect x="76" y="76" width="872" height="872" rx="196" stroke="#34e07f" stroke-opacity="0.20" stroke-width="8"/>
+
+  <!-- Table frame -->
+  <rect x="196" y="230" width="632" height="564" rx="118" stroke="url(#stroke)" stroke-width="34"/>
+
+  <!-- Header rule + header cells -->
+  <path d="M204 400H820" stroke="url(#stroke)" stroke-width="30" stroke-linecap="round"/>
+  <rect x="272" y="300" width="128" height="44" rx="22" fill="url(#fill)" opacity="0.95"/>
+  <rect x="440" y="300" width="128" height="44" rx="22" fill="url(#fill)" opacity="0.66"/>
+  <rect x="608" y="300" width="128" height="44" rx="22" fill="url(#fill)" opacity="0.4"/>
+
+  <!-- Column rule -->
+  <path d="M470 404V780" stroke="url(#stroke)" stroke-width="24" stroke-opacity="0.45" stroke-linecap="round"/>
+
+  <!-- Key column cells -->
+  <rect x="268" y="462" width="150" height="96" rx="34" fill="url(#fill)" opacity="0.92"/>
+  <rect x="268" y="596" width="150" height="96" rx="34" fill="url(#fill)" opacity="0.52"/>
+
+  <!-- SQL prompt badge -->
+  <rect x="516" y="500" width="374" height="326" rx="104" fill="#050b08"/>
+  <rect x="516" y="500" width="374" height="326" rx="104" stroke="url(#stroke)" stroke-width="34"/>
+  <path d="M612 592L688 663L612 734" stroke="url(#stroke)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="726" y="700" width="104" height="38" rx="19" fill="url(#fill)"/>
+</svg>

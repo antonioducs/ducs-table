@@ -3,8 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070709" />
+    <meta name="theme-color" content="#040706" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Duc's Table</title>
+    <style>
+      /* Painted before React mounts so the window never flashes white. */
+      html,
+      body {
+        margin: 0;
+        background: #040706;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

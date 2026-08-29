@@ -96,8 +96,8 @@ export function TabsBar({
         aria-label={groupId ? `Open tabs in group ${groupId}` : "Open sources"}
         data-focused={focused || undefined}
         className={cn(
-          "ducs-glass-bar flex h-10 shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted",
-          focused && "bg-white/[0.03]",
+          "ducs-glass-bar flex h-10 shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted transition-colors duration-200",
+          focused && "bg-white/[0.035]",
         )}
         onMouseDown={onFocus}
         onDragOver={acceptsDrop ? (event) => {
@@ -119,24 +119,29 @@ export function TabsBar({
         } : undefined}
       >
         {onNewQuery && (
-          <div className="sticky left-0 z-10 flex h-full shrink-0 items-center border-r border-border bg-muted/95 px-2.5 backdrop-blur-xl">
+          <div className="sticky left-0 z-10 flex h-full shrink-0 items-center border-r border-border bg-[rgb(11_16_14_/_92%)] px-2 backdrop-blur-xl">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant="brand"
                   size="icon-sm"
-                  className="size-8 shrink-0 border border-primary/35 bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,.08),0_4px_14px_rgba(115,100,223,.16)] hover:border-primary/55 hover:bg-primary/25 hover:text-primary"
+                  className="size-8 shrink-0 rounded-lg shadow-[inset_0_1px_0_rgba(215,255,235,.1),0_6px_18px_-8px_rgba(52,224,127,.6)] hover:[&_svg]:rotate-90"
                   onClick={onNewQuery}
                   aria-label="New query tab"
                 >
-                  <Plus className="size-4" aria-hidden="true" />
+                  <Plus className="size-4 transition-transform duration-300 ease-spring" aria-hidden="true" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>New query (⌘T)</TooltipContent>
             </Tooltip>
           </div>
         )}
-        {tabs.length === 0 && <span className="flex items-center px-3 text-[10px] text-muted-foreground">No open tabs</span>}
+        {tabs.length === 0 && (
+          <span className="flex items-center gap-2 px-3 text-[11px] text-muted-foreground/80">
+            No open tabs
+            <span className="hidden items-center gap-1 sm:flex"><span className="ducs-kbd">⌘</span><span className="ducs-kbd">T</span></span>
+          </span>
+        )}
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
           const Icon = tabIcon(tab);
@@ -160,13 +165,23 @@ export function TabsBar({
                 setDropIndex(dropTargetIndex(event, index));
               } : undefined}
               className={cn(
-                "group relative flex min-w-32 max-w-60 shrink-0 items-center border-r border-border",
-                active ? "bg-white/[0.045] text-foreground" : "bg-transparent text-muted-foreground hover:bg-white/[0.035] hover:text-foreground",
+                "group relative flex min-w-32 max-w-60 shrink-0 items-center border-r border-border transition-colors duration-200 ease-soft",
+                active
+                  ? "bg-gradient-to-b from-primary/[0.09] to-transparent text-foreground"
+                  : "bg-transparent text-muted-foreground hover:bg-white/[0.035] hover:text-foreground",
                 dropIndex === index && "border-l-2 border-l-primary",
                 dropIndex === index + 1 && "border-r-2 border-r-primary",
               )}
             >
-              {active && <span className={cn("absolute inset-x-0 top-0 h-0.5", focused ? "bg-primary" : "bg-primary/40")} aria-hidden="true" />}
+              {/* Animated brand rail on the active tab; brighter when the group has focus. */}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute inset-x-0 top-0 h-[2px] origin-left bg-gradient-to-r from-brand-300 via-primary to-brand-500 transition-[opacity,transform] duration-300 ease-spring",
+                  active ? "scale-x-100" : "scale-x-0 opacity-0",
+                  active && (focused ? "opacity-100 shadow-[0_1px_10px_rgba(52,224,127,.75)]" : "opacity-45"),
+                )}
+              />
               <button
                 type="button"
                 role="tab"
@@ -182,7 +197,10 @@ export function TabsBar({
                 onAuxClick={(event) => { if (event.button === 1) onClose(tab.id); }}
                 className="flex h-full min-w-0 flex-1 items-center gap-2 py-0 pl-3 pr-1.5 text-left text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
-                <Icon className={cn("size-3.5 shrink-0", active && "text-primary")} aria-hidden="true" />
+                <Icon
+                  className={cn("size-3.5 shrink-0 transition-[color,transform] duration-200 ease-soft", active ? "text-primary" : "opacity-70 group-hover:opacity-100")}
+                  aria-hidden="true"
+                />
                 <span className="truncate text-left" title={tab.title}>{tab.title}</span>
               </button>
               {hasMenu && (
@@ -208,7 +226,10 @@ export function TabsBar({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="mr-1.5 size-6 opacity-50 group-hover:opacity-100 group-focus-within:opacity-100"
+                    className={cn(
+                      "mr-1.5 size-6 rounded-md transition-opacity duration-150 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100",
+                      active ? "opacity-70" : "opacity-0",
+                    )}
                     onClick={() => onClose(tab.id)}
                     aria-label={`Close ${tab.title}`}
                   >

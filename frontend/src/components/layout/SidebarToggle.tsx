@@ -19,7 +19,9 @@ export function SidebarToggle({ open, onToggle }: SidebarToggleProps) {
           variant="ghost"
           size="icon-sm"
           className={cn(
-            "absolute top-2 z-30 size-6 rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-md backdrop-blur-sm transition-[left,transform,color,background-color] hover:bg-accent hover:text-foreground",
+            "absolute top-2.5 z-30 size-6 rounded-full border border-border/80 bg-[rgb(12_17_15_/_96%)] text-muted-foreground shadow-[0_4px_14px_-4px_rgba(0,0,0,.9)] backdrop-blur-sm",
+            "transition-[left,transform,color,background-color,border-color,box-shadow] duration-200 ease-soft",
+            "hover:border-primary/40 hover:bg-accent hover:text-primary hover:shadow-[0_0_16px_-4px_rgba(52,224,127,.65)]",
             open ? "left-1/2 -translate-x-1/2" : "left-2 translate-x-0",
           )}
           onPointerDown={(event) => event.stopPropagation()}

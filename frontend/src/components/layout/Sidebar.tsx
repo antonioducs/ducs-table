@@ -56,12 +56,17 @@ interface SidebarSectionProps {
 
 function SidebarSection({ title, icon, empty, contentClassName, children }: SidebarSectionProps) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  const count = Array.isArray(children) ? children.length : undefined;
   return (
-    <section className="min-w-0 border-b border-border py-2" aria-label={title}>
-      <h2 className="flex h-7 items-center gap-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
-        {icon}{title}
+    <section className="min-w-0 border-b border-border/70 py-2" aria-label={title}>
+      <h2 className="ducs-eyebrow sticky top-0 z-10 flex h-7 items-center gap-1.5 bg-gradient-to-b from-[rgb(11_16_14_/_92%)] to-[rgb(11_16_14_/_55%)] px-3 text-muted-foreground/85 backdrop-blur-sm">
+        <span className="text-primary/70 [&_svg]:size-3">{icon}</span>
+        {title}
+        {count ? <span className="ducs-num ml-auto rounded-full bg-white/[0.05] px-1.5 py-px text-[9px] font-semibold tracking-normal text-muted-foreground/80">{count}</span> : null}
       </h2>
-      {hasChildren ? <div className={cn("min-w-0", contentClassName)}>{children}</div> : <p className="px-3 py-2 text-[10px] leading-4 text-muted-foreground/70">{empty}</p>}
+      {hasChildren
+        ? <div className={cn("ducs-stagger min-w-0 pt-0.5", contentClassName)}>{children}</div>
+        : <p className="mx-2 mt-1 rounded-md border border-dashed border-border/80 px-2.5 py-2 text-[10px] leading-4 text-muted-foreground/70">{empty}</p>}
     </section>
   );
 }
@@ -243,16 +248,24 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
           </div>
           <div
             className={cn(
-              "group relative z-10 flex w-full min-w-0 items-center overflow-hidden rounded-md border border-transparent bg-card will-change-transform",
-              !swiping && "transition-[transform,opacity] duration-[220ms] ease-out motion-reduce:transition-none",
+              "group relative z-10 flex w-full min-w-0 items-center overflow-hidden rounded-lg border border-transparent bg-[rgb(10_15_13)] will-change-transform",
+              !swiping && "transition-[transform,opacity,background-color,border-color,box-shadow] duration-[220ms] ease-soft motion-reduce:transition-none",
               quickRemoving && "pointer-events-none",
-              active ? "border-primary/20 bg-primary/10" : "hover:bg-accent",
+              active
+                ? "border-primary/25 bg-gradient-to-r from-primary/[0.16] to-primary/[0.04] shadow-[inset_0_1px_0_rgba(215,255,235,.06),0_6px_18px_-12px_rgba(52,224,127,.8)]"
+                : "hover:border-border hover:bg-accent/80",
             )}
             style={{
               opacity: removalPhase === "idle" ? 1 : 0,
               transform: removalPhase === "idle" ? `translateX(-${swipeOffset}px)` : "translateX(-100%)",
             }}
           >
+            {active && (
+              <span
+                aria-hidden="true"
+                className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-gradient-to-b from-brand-200 to-primary shadow-[0_0_10px_rgba(52,224,127,.8)]"
+              />
+            )}
             {editing ? (
               <div className="min-w-0 flex-1 overflow-hidden px-2 py-1.5">
                 <span className="flex min-w-0 items-center gap-1.5">
@@ -274,7 +287,7 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
                   />
                   <Badge variant={status.variant} className="h-4 shrink-0 px-1.5 text-[8px] uppercase leading-none">{renaming ? "Saving" : status.label}</Badge>
                 </span>
-                <code className="mt-0.5 block truncate pl-5 text-[9px] text-muted-foreground" title={source.tableName}>{source.tableName}</code>
+                <code className="mt-0.5 block truncate pl-5 text-[9.5px] text-muted-foreground/75 transition-colors group-hover:text-muted-foreground" title={source.tableName}>{source.tableName}</code>
               </div>
             ) : (
               <button
@@ -301,12 +314,18 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
                 ].filter(Boolean).join(" · ") || undefined}
               >
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <Table2 className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-foreground" title={source.displayName}>{source.displayName}</span>
+                  <Table2
+                    className={cn(
+                      "size-3.5 shrink-0 transition-[color,transform] duration-200 ease-soft group-hover:scale-110",
+                      active ? "text-primary" : "text-muted-foreground group-hover:text-brand-300",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className={cn("min-w-0 flex-1 truncate text-[11.5px] transition-colors", active ? "font-medium text-foreground" : "text-foreground/90")} title={source.displayName}>{source.displayName}</span>
                   {source.snapshot && <Badge variant="muted" className="h-4 shrink-0 px-1.5 text-[8px] uppercase leading-none" title={`${source.snapshot.catalog}.${source.snapshot.schema}.${source.snapshot.relation} · refreshed ${new Date(source.snapshot.refreshedAt).toLocaleString()}`}>Snapshot</Badge>}
                   <Badge variant={status.variant} className="h-4 shrink-0 px-1.5 text-[8px] uppercase leading-none">{status.label}</Badge>
                 </span>
-                <code className="mt-0.5 block truncate pl-5 text-[9px] text-muted-foreground" title={source.tableName}>{source.tableName}</code>
+                <code className="mt-0.5 block truncate pl-5 text-[9.5px] text-muted-foreground/75 transition-colors group-hover:text-muted-foreground" title={source.tableName}>{source.tableName}</code>
               </button>
             )}
 
@@ -315,7 +334,7 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="size-6 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100"
+                  className="size-6 rounded-md opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-80 group-focus-within:opacity-100"
                   aria-label={`Copy table name ${source.tableName}`}
                   onClick={() => onCopyTable?.(source)}
                   disabled={!onCopyTable}
@@ -328,7 +347,7 @@ function SourceRow({ source, active, onSelectSource, onInsertTable, onCopyTable,
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-sm" className="mr-1 size-6 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100" aria-label={`Actions for ${source.displayName}`}>
+                    <Button variant="ghost" size="icon-sm" className="mr-1 size-6 rounded-md opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-80 group-focus-within:opacity-100" aria-label={`Actions for ${source.displayName}`}>
                       <MoreHorizontal aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -406,7 +425,7 @@ function SavedQueryRow({ query, onSelect, onRename, onDelete }: SavedQueryRowPro
   };
 
   return (
-    <div className="group mx-1 flex min-w-0 items-center rounded-md hover:bg-accent">
+    <div className="group mx-1 my-0.5 flex min-w-0 items-center rounded-lg border border-transparent transition-[background-color,border-color] duration-200 ease-soft hover:border-border hover:bg-accent/80">
       {editing ? (
         <div className="flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2">
           <Bookmark className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -445,7 +464,7 @@ function SavedQueryRow({ query, onSelect, onRename, onDelete }: SavedQueryRowPro
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="mr-1 size-6 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100" aria-label={`Actions for saved query ${query.name}`}>
+          <Button variant="ghost" size="icon-sm" className="mr-1 size-6 rounded-md opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-80 group-focus-within:opacity-100" aria-label={`Actions for saved query ${query.name}`}>
             <MoreHorizontal aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
@@ -478,20 +497,21 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <aside className="ducs-glass-panel flex h-full min-h-0 flex-col border-r border-border bg-card" aria-label="Data sources and saved SQL">
-      <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
-        <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground" title={props.projectName}>{props.projectName ?? "Workspace"}</span>
-        <Badge variant="muted" className="ml-auto">{tables.length} tables</Badge>
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <span className="ducs-live-dot shrink-0" aria-hidden="true" />
+        <span className="ducs-display min-w-0 flex-1 truncate text-[12.5px] text-foreground" title={props.projectName}>{props.projectName ?? "Workspace"}</span>
+        <Badge variant="muted" className="ducs-num shrink-0">{tables.length} tables</Badge>
       </div>
       <div className="shrink-0 border-b border-border p-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <div className="group relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70 transition-colors duration-150 group-focus-within:text-primary" aria-hidden="true" />
           <Input
             type="search"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Search files"
             aria-label="Search files"
-            className="h-7 pl-7 pr-7 text-[10px]"
+            className="h-7.5 pl-8 pr-7 text-[11px]"
           />
           {filter && (
             <Button variant="ghost" size="icon-sm" className="absolute right-1 top-1/2 size-5 -translate-y-1/2" onClick={() => setFilter("")} aria-label="Clear file search">

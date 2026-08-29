@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
-import { Copy, DatabaseZap, FolderPlus, RefreshCw, Save, Trash2, WifiOff } from "lucide-react";
+import { Copy, DatabaseZap, FileUp, FolderPlus, RefreshCw, Save, Trash2, WifiOff } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { bridge, getErrorMessage, normalizeSource } from "@/lib/bridge";
 import { appErrorToastDescription, ImportFailureToastDeduper, presentAppError } from "@/lib/app-error";
@@ -47,6 +47,7 @@ import { StatusBar } from "@/components/layout/StatusBar";
 import { WorkbenchLayout } from "@/components/workbench/WorkbenchLayout";
 import { EditorGroup } from "@/components/workbench/EditorGroup";
 import { EmptyState } from "@/components/import/EmptyState";
+import { BrandMark } from "@/components/layout/BrandMark";
 import { ImportStatusBanner } from "@/components/import/ImportStatusBanner";
 import { RetryImportDialog, SheetPicker } from "@/components/import/ImportDialogs";
 import { JobsPanel } from "@/components/jobs/JobsPanel";
@@ -1263,11 +1264,30 @@ export default function App() {
     />
   );
 
-  if (!store.bootstrapped) return <div className="ducs-shell grid place-items-center"><div className="text-center"><span className="ducs-pulse mx-auto block size-2 rounded-full bg-primary" /><p className="mt-3 text-[11px] text-muted-foreground">Opening projects and local DuckDB workspaces…</p></div></div>;
+  if (!store.bootstrapped) {
+    return (
+      <div className="ducs-shell grid place-items-center">
+        <span className="ducs-aurora" aria-hidden="true" />
+        <div className="ducs-rise relative text-center">
+          <div className="relative mx-auto grid size-20 place-items-center">
+            <span aria-hidden="true" className="absolute inset-0 rounded-[26px] border border-primary/25 animate-ducs-breathe" />
+            <span aria-hidden="true" className="absolute -inset-8 rounded-full bg-primary/[0.09] blur-3xl" />
+            <span className="ducs-glass-card relative grid size-16 place-items-center rounded-2xl">
+              <BrandMark size={34} animated />
+            </span>
+          </div>
+          <p className="ducs-display mt-5 text-[18px]"><span className="ducs-brand-text">Duc&apos;s</span> <span className="text-foreground/85">Table</span></p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">Opening projects and local DuckDB workspaces…</p>
+          <span aria-hidden="true" className="ducs-trace mx-auto mt-4 block h-px w-40 overflow-hidden rounded-full bg-border" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TooltipProvider delayDuration={350}>
       <div className="ducs-shell flex flex-col text-foreground">
+        <span className="ducs-aurora" aria-hidden="true" />
         <TopBar
           projects={projects}
           activeProjectId={activeProjectId}
@@ -1285,7 +1305,19 @@ export default function App() {
           canExport={Boolean(activeProjectId && ((activeSource?.status === "ready") || (activeRelation && activeConnection?.status === "connected")))}
         />
         {bootstrapError && <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">{bootstrapError}</div>}
-        {!activeProjectId || !workspace ? <main className="grid min-h-0 flex-1 place-items-center bg-background text-center"><div><FolderPlus className="mx-auto size-8 text-primary" /><h1 className="mt-4 text-lg font-semibold">Create your first project</h1><p className="mt-1 text-[12px] text-muted-foreground">Projects keep sources, SQL drafts, tabs, and history isolated.</p><Button className="mt-4" onClick={() => { setProjectManagerCreate(true); setProjectManagerOpen(true); }}><FolderPlus /> New project</Button></div></main> : <div className="min-h-0 flex-1">
+        {!activeProjectId || !workspace ? (
+          <main className="grid min-h-0 flex-1 place-items-center bg-background text-center">
+            <div className="ducs-rise">
+              <span className="relative mx-auto grid size-16 place-items-center">
+                <span aria-hidden="true" className="absolute -inset-6 rounded-full bg-primary/[0.08] blur-2xl" />
+                <span className="ducs-glass-card relative grid size-14 place-items-center rounded-2xl text-primary"><FolderPlus className="size-6" /></span>
+              </span>
+              <h1 className="ducs-display mt-5 text-[24px]"><span className="ducs-brand-text">Create your first project</span></h1>
+              <p className="mt-2 text-[12.5px] text-muted-foreground">Projects keep sources, SQL drafts, tabs, and history isolated.</p>
+              <Button size="lg" className="mt-5" onClick={() => { setProjectManagerCreate(true); setProjectManagerOpen(true); }}><FolderPlus /> New project</Button>
+            </div>
+          </main>
+        ) : <div className="min-h-0 flex-1">
           <PanelGroup direction="horizontal" onLayout={(sizes) => sizes[1] && store.setPanel({ aiSize: sizes[1] })}>
             <Panel minSize={50}>
           <div className="flex h-full min-w-0">
@@ -1404,8 +1436,35 @@ export default function App() {
       <ProjectManagerDialog open={projectManagerOpen} createOnOpen={projectManagerCreate} projects={projects} activeProjectId={activeProjectId} onOpenChange={(open) => { if (open) setProjectManagerOpen(true); else flushForDialog(() => { setProjectManagerOpen(false); setProjectManagerCreate(false); }); }} onCreate={createProject} onUpdate={updateProject} onArchive={archiveProject} onRestore={restoreProject} />
       <ConfirmDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) flushForDialog(() => setPendingDelete(undefined)); }} title={pendingDelete?.kind === "result" ? "Discard this result?" : pendingDelete?.kind === "query" ? "Delete saved query?" : "Remove this dataset?"} description={pendingDelete?.kind === "result" ? `“${pendingDelete.name}” is ephemeral and will be dropped from this project.` : pendingDelete?.kind === "query" ? `“${pendingDelete.name}” will be removed from this project's saved SQL.` : `“${pendingDelete?.name ?? "This dataset"}” will be removed from ${pendingDelete ? projectName(pendingDelete.projectId) : "the project"}. The original file remains untouched.`} actionLabel={pendingDelete?.kind === "result" ? "Discard" : "Remove"} onConfirm={() => void confirmDelete()} />
       <ConfirmDialog open={Boolean(pendingDetach)} onOpenChange={(open) => { if (!open) flushForDialog(() => setPendingDetach(undefined)); }} title="Remove connection from this project?" description={`“${pendingDetach?.connection.name ?? "This connection"}” remains available globally and can be attached again. Other projects are not affected.`} actionLabel="Remove from project" onConfirm={() => void detachConnection()} />
-      <Toaster theme="dark" position="bottom-right" richColors closeButton toastOptions={{ style: { background: "rgba(19, 19, 23, .94)", border: "1px solid rgba(255, 255, 255, .1)", color: "#f4f4f5", backdropFilter: "blur(24px)" } }} />
-      {dragActive && workspaceHasItems && <div className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-xl border-2 border-dashed border-primary bg-background/80 text-primary backdrop-blur-sm"><div className="text-center"><p className="text-lg font-semibold">Drop to import into {activeProject?.name}</p><p className="mt-1 text-[11px] text-muted-foreground">Files are processed locally</p></div></div>}
+      <Toaster
+        theme="dark"
+        position="bottom-right"
+        richColors
+        closeButton
+        toastOptions={{
+          style: {
+            background: "linear-gradient(180deg, rgba(215,255,235,.05), transparent 46%), rgba(15, 21, 18, .94)",
+            border: "1px solid rgba(160, 255, 205, .12)",
+            borderRadius: "12px",
+            color: "#eaf2ed",
+            backdropFilter: "blur(26px) saturate(140%)",
+            boxShadow: "inset 0 1px 0 rgba(215,255,235,.06), 0 20px 48px -18px rgba(0,0,0,.85)",
+            fontFamily: "var(--font-sans)",
+          },
+        }}
+      />
+      {dragActive && workspaceHasItems && (
+        <div className="pointer-events-none fixed inset-3 z-40 grid animate-ducs-fade place-items-center rounded-2xl bg-[rgb(4_8_6_/_78%)] backdrop-blur-md">
+          <span aria-hidden="true" className="ducs-marching absolute inset-0 rounded-2xl" />
+          <div className="text-center">
+            <span className="mx-auto grid size-14 place-items-center rounded-2xl border border-primary/30 bg-primary/12 text-primary shadow-[0_0_40px_-10px_rgba(52,224,127,.8)]">
+              <FileUp className="size-6 animate-bounce" aria-hidden="true" />
+            </span>
+            <p className="ducs-display mt-4 text-[22px]"><span className="ducs-brand-text">Drop to import</span> <span className="text-foreground/85">into {activeProject?.name}</span></p>
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">Files are processed locally — nothing leaves this Mac</p>
+          </div>
+        </div>
+      )}
     </TooltipProvider>
   );
 }

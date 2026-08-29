@@ -118,8 +118,8 @@ export function EditorGroup({
       data-group-id={group.id}
       data-focused={focused || undefined}
       className={cn(
-        "relative flex h-full min-h-0 min-w-0 flex-col bg-background",
-        focused && "ring-1 ring-inset ring-primary/25",
+        "relative flex h-full min-h-0 min-w-0 flex-col bg-background transition-shadow duration-300 ease-soft",
+        focused && "ring-1 ring-inset ring-primary/20",
       )}
       onFocusCapture={onFocus}
     >
@@ -144,13 +144,25 @@ export function EditorGroup({
       >
         {contentHost ? null : children}
         {!children && !hasPersistentContent && (
-          <div className="absolute inset-0 grid place-items-center bg-background text-center">
-            <div>
-              <p className="text-[12px] text-foreground">This split is empty</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+          <div className="absolute inset-0 grid place-items-center overflow-hidden bg-background text-center">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 opacity-30 [mask-image:radial-gradient(circle_at_50%_50%,black,transparent_70%)]"
+              style={{
+                backgroundImage:
+                  "linear-gradient(rgba(160,255,205,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(160,255,205,.05) 1px, transparent 1px)",
+                backgroundSize: "40px 40px",
+              }}
+            />
+            <div className="ducs-rise relative">
+              <span className="mx-auto grid size-11 place-items-center rounded-xl border border-border bg-card/70 text-primary/80 shadow-[inset_0_1px_0_rgba(215,255,235,.05)]">
+                <FileCode2 className="size-4.5" aria-hidden="true" />
+              </span>
+              <p className="ducs-display mt-3 text-[14px] text-foreground">This split is empty</p>
+              <p className="mx-auto mt-1 max-w-64 text-[11px] leading-4 text-muted-foreground">
                 Open a table from {projectName ?? "the sidebar"}, drag a tab here, or start a query.
               </p>
-              <div className="mt-3 flex items-center justify-center gap-2">
+              <div className="mt-4 flex items-center justify-center gap-2">
                 <Button variant="secondary" size="sm" onClick={onNewQuery}><FileCode2 /> New query</Button>
                 {onOpenFiles && <Button variant="ghost" size="sm" onClick={onOpenFiles}><FolderOpen /> Open files</Button>}
               </div>
@@ -162,7 +174,7 @@ export function EditorGroup({
             aria-hidden="true"
             data-drop-edge={edge}
             className={cn(
-              "pointer-events-none absolute z-20 bg-primary/20 ring-1 ring-primary/50",
+              "pointer-events-none absolute z-20 animate-ducs-fade bg-gradient-to-br from-primary/25 to-primary/10 ring-1 ring-inset ring-primary/60 backdrop-blur-[1px]",
               edge === "horizontal" ? "inset-y-0 right-0 w-1/2" : "inset-x-0 bottom-0 h-1/2",
             )}
           />

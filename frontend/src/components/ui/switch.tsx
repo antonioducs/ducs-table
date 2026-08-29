@@ -3,7 +3,25 @@ import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 
 export function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimitive.Root>) {
-  return <SwitchPrimitive.Root className={cn("inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border bg-muted px-0.5 transition-colors data-[state=checked]:border-primary/50 data-[state=checked]:bg-primary/30 disabled:cursor-not-allowed disabled:opacity-50", className)} {...props}>
-    <SwitchPrimitive.Thumb className="block size-3.5 rounded-full bg-muted-foreground shadow transition-transform data-[state=checked]:translate-x-4 data-[state=checked]:bg-primary" />
-  </SwitchPrimitive.Root>;
+  return (
+    <SwitchPrimitive.Root
+      className={cn(
+        "inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border bg-muted px-0.5 outline-none",
+        "transition-[background-color,border-color,box-shadow] duration-200 ease-soft",
+        "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+        "data-[state=checked]:border-primary/60 data-[state=checked]:bg-primary/25 data-[state=checked]:shadow-[0_0_16px_-4px_rgba(52,224,127,.6)]",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    >
+      <SwitchPrimitive.Thumb
+        className={cn(
+          "block size-3.5 rounded-full bg-muted-foreground shadow-sm",
+          "transition-[transform,background-color] duration-200 ease-spring",
+          "data-[state=checked]:translate-x-4 data-[state=checked]:bg-primary",
+        )}
+      />
+    </SwitchPrimitive.Root>
+  );
 }

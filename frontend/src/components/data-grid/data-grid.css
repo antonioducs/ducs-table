@@ -1,16 +1,16 @@
 .ducs-data-grid {
-  --ag-background-color: var(--color-background, #08080a);
-  --ag-foreground-color: var(--color-foreground, #f4f4f5);
-  --ag-header-background-color: #121216;
-  --ag-header-foreground-color: #c6c6ce;
-  --ag-border-color: rgb(255 255 255 / 9%);
-  --ag-row-border-color: rgb(255 255 255 / 6%);
-  --ag-odd-row-background-color: #0d0d10;
-  --ag-selected-row-background-color: rgb(139 124 246 / 13%);
-  --ag-row-hover-color: rgb(139 124 246 / 7%);
-  --ag-input-focus-border-color: var(--color-primary, #8b7cf6);
-  --ag-range-selection-border-color: var(--color-primary, #8b7cf6);
-  --ag-accent-color: var(--color-primary, #8b7cf6);
+  --ag-background-color: #080c0a;
+  --ag-foreground-color: #dceae3;
+  --ag-header-background-color: rgb(16 22 19 / 96%);
+  --ag-header-foreground-color: #9fb3a9;
+  --ag-border-color: rgb(160 255 205 / 9%);
+  --ag-row-border-color: rgb(160 255 205 / 5%);
+  --ag-odd-row-background-color: #0b100e;
+  --ag-selected-row-background-color: rgb(52 224 127 / 13%);
+  --ag-row-hover-color: rgb(52 224 127 / 7%);
+  --ag-input-focus-border-color: var(--color-primary, #34e07f);
+  --ag-range-selection-border-color: var(--color-primary, #34e07f);
+  --ag-accent-color: var(--color-primary, #34e07f);
   --ag-font-family: inherit;
   --ag-font-size: 12px;
   --ag-grid-size: 4px;
@@ -23,36 +23,36 @@
   width: 100%;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-background, #08080a);
-  color: var(--color-foreground, #f4f4f5);
+  background: #080c0a;
+  color: #dceae3;
 }
 
 /* AG Grid declares its defaults on the theme element itself, so repeat the
    workspace tokens there instead of relying only on inherited variables. */
 .ducs-data-grid .ag-theme-quartz-dark {
-  --ag-background-color: #0a0a0d;
-  --ag-foreground-color: #dedee4;
-  --ag-header-background-color: #121216;
-  --ag-header-foreground-color: #c6c6ce;
-  --ag-border-color: rgb(255 255 255 / 9%);
-  --ag-secondary-border-color: rgb(255 255 255 / 6%);
-  --ag-row-border-color: rgb(255 255 255 / 6%);
-  --ag-odd-row-background-color: #0d0d10;
-  --ag-row-hover-color: rgb(139 124 246 / 7%);
-  --ag-selected-row-background-color: rgb(139 124 246 / 13%);
-  --ag-input-focus-border-color: #8b7cf6;
-  --ag-range-selection-border-color: #8b7cf6;
-  --ag-checkbox-checked-color: #8b7cf6;
-  --ag-accent-color: #8b7cf6;
-  --ag-icon-color: #8d8d98;
+  --ag-background-color: #080c0a;
+  --ag-foreground-color: #dceae3;
+  --ag-header-background-color: rgb(16 22 19 / 96%);
+  --ag-header-foreground-color: #9fb3a9;
+  --ag-border-color: rgb(160 255 205 / 9%);
+  --ag-secondary-border-color: rgb(160 255 205 / 6%);
+  --ag-row-border-color: rgb(160 255 205 / 5%);
+  --ag-odd-row-background-color: #0b100e;
+  --ag-row-hover-color: rgb(52 224 127 / 7%);
+  --ag-selected-row-background-color: rgb(52 224 127 / 13%);
+  --ag-input-focus-border-color: #34e07f;
+  --ag-range-selection-border-color: #34e07f;
+  --ag-checkbox-checked-color: #34e07f;
+  --ag-accent-color: #34e07f;
+  --ag-icon-color: #7f9189;
 }
 
 .ducs-data-grid__preparing {
   flex: none;
-  border-bottom: 1px solid rgb(139 124 246 / 24%);
-  background: rgb(139 124 246 / 10%);
+  border-bottom: 1px solid rgb(52 224 127 / 24%);
+  background: linear-gradient(180deg, rgb(52 224 127 / 12%), rgb(52 224 127 / 5%));
   padding: 7px 12px;
-  color: #c7c0ff;
+  color: #97fbc8;
   font-size: 12px;
   line-height: 18px;
 }
@@ -65,10 +65,10 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  border-bottom: 1px solid rgb(160 255 205 / 9%);
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 4%), transparent),
-    rgb(14 14 17 / 82%);
+    linear-gradient(180deg, rgb(215 255 235 / 4%), transparent),
+    rgb(11 16 14 / 84%);
   padding: 6px 8px;
   -webkit-backdrop-filter: blur(20px) saturate(125%);
   backdrop-filter: blur(20px) saturate(125%);
@@ -86,19 +86,20 @@
   z-index: 70;
   width: min(360px, calc(100vw - 32px));
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 11%);
-  border-radius: 8px;
+  border: 1px solid rgb(160 255 205 / 11%);
+  border-radius: 12px;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 6%), transparent 44%),
-    rgb(19 19 23 / 92%);
+    linear-gradient(180deg, rgb(215 255 235 / 6%), transparent 44%),
+    rgb(15 21 18 / 94%);
   -webkit-backdrop-filter: blur(28px) saturate(140%);
   backdrop-filter: blur(28px) saturate(140%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 18px 48px rgb(0 0 0 / 58%);
+  box-shadow: inset 0 1px 0 rgb(215 255 235 / 5%), 0 22px 56px rgb(0 0 0 / 62%);
+  animation: ducs-pop 0.16s var(--ease-spring, ease-out) both;
 }
 
 .ducs-data-grid__column-search {
   position: relative;
-  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  border-bottom: 1px solid rgb(160 255 205 / 9%);
   padding: 8px;
 }
 
@@ -109,7 +110,7 @@
   z-index: 1;
   width: 13px;
   height: 13px;
-  color: #8e8e99;
+  color: #8b9c93;
   pointer-events: none;
 }
 
@@ -136,12 +137,12 @@
 
 .ducs-data-grid__column-option:hover,
 .ducs-data-grid__column-option:focus-within {
-  background: rgb(255 255 255 / 7%);
+  background: rgb(160 255 205 / 7%);
 }
 
 .ducs-data-grid__column-option > span {
   overflow: hidden;
-  color: #ececef;
+  color: #e6f1ea;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -150,7 +151,7 @@
 .ducs-data-grid__column-option > small {
   max-width: 92px;
   overflow: hidden;
-  color: #8e8e99;
+  color: #8b9c93;
   font-size: 9px;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -160,7 +161,7 @@
 .ducs-data-grid__column-empty {
   margin: 0;
   padding: 16px 10px;
-  color: #8e8e99;
+  color: #8b9c93;
   font-size: 12px;
   text-align: center;
 }
@@ -170,7 +171,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  border-top: 1px solid rgb(255 255 255 / 9%);
+  border-top: 1px solid rgb(160 255 205 / 9%);
   padding: 5px;
 }
 
@@ -202,7 +203,7 @@
 }
 
 .ducs-data-grid .ag-cell-focus {
-  box-shadow: inset 0 0 0 1px var(--color-primary, #8b7cf6);
+  box-shadow: inset 0 0 0 1px var(--color-primary, #34e07f);
 }
 
 .ducs-data-grid__cell--number {
@@ -211,11 +212,11 @@
 }
 
 .ducs-data-grid__cell--boolean {
-  color: #c7c0ff;
+  color: #97fbc8;
 }
 
 .ducs-data-grid__cell--date {
-  color: #c8c8d0;
+  color: #a8d6cf;
   font-variant-numeric: tabular-nums;
 }
 
@@ -227,13 +228,14 @@
   place-content: center;
   gap: 6px;
   padding: 24px;
-  color: #8e8e99;
+  color: #8b9c93;
   text-align: center;
 }
 
 .ducs-data-grid__empty strong {
-  color: #e7e7eb;
-  font-size: 14px;
+  color: #eaf2ed;
+  font-family: var(--font-display, inherit);
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -255,14 +257,14 @@
 }
 
 .ducs-data-grid__viewer-status {
-  border: 1px solid rgb(139 124 246 / 18%);
-  background: rgb(139 124 246 / 8%);
-  color: #b9b6c8;
+  border: 1px solid rgb(52 224 127 / 18%);
+  background: rgb(52 224 127 / 8%);
+  color: #a9c7ba;
 }
 
 .ducs-data-grid__viewer-error {
-  border: 1px solid #683b3b;
-  background: #281616;
+  border: 1px solid rgb(255 107 107 / 32%);
+  background: rgb(40 16 16 / 88%);
   color: #ffb6b6;
 }
 
@@ -271,12 +273,12 @@
   max-height: 52vh;
   margin: 0;
   overflow: auto;
-  border: 1px solid rgb(255 255 255 / 11%);
-  border-radius: 6px;
-  background: rgb(6 6 8 / 82%);
+  border: 1px solid rgb(160 255 205 / 11%);
+  border-radius: 8px;
+  background: rgb(4 8 6 / 84%);
   padding: 12px;
-  color: #eeeef1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #e9f3ec;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 18px;
   overflow-wrap: anywhere;
@@ -284,7 +286,7 @@
 }
 
 .ducs-data-grid__full-value:focus-visible {
-  outline: 2px solid var(--color-primary, #8b7cf6);
+  outline: 2px solid var(--color-primary, #34e07f);
   outline-offset: 2px;
 }
 
@@ -297,6 +299,6 @@
 }
 
 .ducs-data-grid__viewer-actions > span {
-  color: #c7c0ff;
+  color: #97fbc8;
   font-size: 11px;
 }

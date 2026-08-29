@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Database, Settings2, X } from "lucide-react";
+import { Bot, Database, Settings2, ShieldAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/bridge";
 import { useAIStore } from "@/stores/ai-store";
@@ -69,10 +69,14 @@ export function AIChatPanel({ projectId, projectName, sourceName, onClose, onRep
 
   return (
     <aside aria-label="AI assistant" className="ducs-glass-panel flex h-full min-h-0 flex-col border-l border-border bg-card">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-2">
-        <Bot className="size-4 text-primary" /><span className="text-[11px] font-semibold">AI assistant</span>
-        <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="AI settings" onClick={() => setSetupOpen(true)}><Settings2 /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Close AI panel" onClick={onClose}><X /></Button>
+      <div className="ducs-glass-bar flex h-12 shrink-0 items-center gap-2 border-b border-border px-2.5">
+        <span className="grid size-7 place-items-center rounded-lg border border-primary/25 bg-primary/10 text-primary shadow-[inset_0_1px_0_rgba(215,255,235,.08)]">
+          <Bot className="size-4" />
+        </span>
+        <span className="ducs-display text-[13px] text-foreground">AI assistant</span>
+        {running && <span className="ducs-live-dot ml-0.5" aria-hidden="true" />}
+        <Button variant="ghost" size="icon-sm" className="ml-auto hover:[&_svg]:rotate-45 [&_svg]:transition-transform [&_svg]:duration-300" aria-label="AI settings" onClick={() => setSetupOpen(true)}><Settings2 /></Button>
+        <Button variant="ghost" size="icon-sm" className="hover:bg-destructive/15 hover:text-destructive" aria-label="Close AI panel" onClick={onClose}><X /></Button>
       </div>
       <div className="space-y-2 border-b border-border p-2">
         <AIConversationPicker
@@ -89,7 +93,13 @@ export function AIChatPanel({ projectId, projectName, sourceName, onClose, onRep
         </div>
       </div>
       {store.errorByProject[projectId] && <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[10px] text-destructive">{store.errorByProject[projectId]}</div>}
-      {!loading && !ready && <div className="border-b border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-200"><p>Choose and authenticate a provider to use AI.</p><Button size="sm" className="mt-1" onClick={() => setSetupOpen(true)}>Set up provider</Button></div>}
+      {!loading && !ready && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-warning/25 bg-warning/[0.07] px-2.5 py-2 text-[10.5px] text-warning">
+          <ShieldAlert className="size-3.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 flex-1 leading-4">Choose and authenticate a provider to use AI.</p>
+          <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setSetupOpen(true)}>Set up</Button>
+        </div>
+      )}
       <AIMessageList messages={messages} tools={tools} approvals={approvals} approvalBusy={approvalBusy} onApproval={(approval, decision) => void respondApproval(approval, decision)} onReplace={onReplaceSQL} onAppend={onAppendSQL} onExecute={onExecuteSQL} />
       <AIComposer
         disabled={loading || !ready}

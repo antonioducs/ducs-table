@@ -20,7 +20,7 @@ function Markdown({ children, sqlActions }: { children: string; sqlActions: Omit
     code({ className, children: codeChildren, ...props }) {
       const code = String(codeChildren).replace(/\n$/, "");
       if (/language-sql/i.test(className ?? "")) return <AISQLCard sql={code} {...sqlActions} />;
-      return <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[10px]", className)} {...props}>{codeChildren}</code>;
+      return <code className={cn("rounded bg-primary/10 px-1 py-0.5 font-mono text-[10.5px] text-brand-200", className)} {...props}>{codeChildren}</code>;
     },
     a({ children: linkChildren, href }) {
       return <a href={href} className="text-primary underline" onClick={(event) => {
@@ -55,7 +55,18 @@ export function AIMessageList({ messages, tools, approvals, approvalBusy, onAppr
   }, [contentSize]);
 
   if (messages.length === 0 && approvals.length === 0) {
-    return <div className="grid min-h-0 flex-1 place-items-center p-6 text-center"><div><Bot className="mx-auto size-6 text-primary" /><p className="mt-2 text-[11px] text-foreground">Ask for analysis or SQL</p><p className="mt-1 text-[10px] leading-4 text-muted-foreground">AI can inspect project metadata and run read-only previews after your authorization.</p></div></div>;
+    return (
+      <div className="grid min-h-0 flex-1 place-items-center p-6 text-center">
+        <div className="ducs-rise">
+          <span className="relative mx-auto grid size-12 place-items-center">
+            <span aria-hidden="true" className="absolute inset-0 rounded-2xl border border-primary/20 animate-ducs-breathe" />
+            <span className="ducs-glass-card relative grid size-11 place-items-center rounded-xl text-primary"><Bot className="size-5" /></span>
+          </span>
+          <p className="ducs-display mt-3 text-[13px] text-foreground">Ask for analysis or SQL</p>
+          <p className="mx-auto mt-1.5 max-w-56 text-[10.5px] leading-4 text-muted-foreground">AI can inspect project metadata and run read-only previews after your authorization.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -64,10 +75,10 @@ export function AIMessageList({ messages, tools, approvals, approvalBusy, onAppr
         {messages.map((message) => {
           const messageTools = tools.filter((tool) => tool.messageId === message.id);
           return (
-            <article key={message.id} className={cn("ducs-selectable-text text-[11px]", message.role === "user" && "ml-5 rounded-lg bg-primary/10 p-2.5")}>
-              <div className="mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <article key={message.id} className={cn("ducs-selectable-text animate-ducs-rise text-[11.5px]", message.role === "user" && "ml-5 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.14] to-primary/[0.05] p-2.5 shadow-[inset_0_1px_0_rgba(215,255,235,.05)]")}>
+              <div className="ducs-eyebrow mb-1.5 flex items-center gap-1.5 text-muted-foreground/80">
                 {message.role === "user" ? <User className="size-3" /> : <Bot className="size-3 text-primary" />}{message.role}
-                {message.status === "streaming" && <span className="ducs-pulse ml-1 size-1.5 rounded-full bg-primary" />}
+                {message.status === "streaming" && <span className="ducs-live-dot ml-0.5" aria-hidden="true" />}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -80,7 +91,7 @@ export function AIMessageList({ messages, tools, approvals, approvalBusy, onAppr
                   <Copy className="size-3" aria-hidden="true" />
                 </Button>
               </div>
-              {message.reasoning && <details className="mb-2 rounded border border-border bg-muted/20 p-1.5 text-[10px] text-muted-foreground"><summary className="flex cursor-pointer items-center gap-1"><ChevronRight className="size-3" />Reasoning</summary><p className="mt-1 whitespace-pre-wrap">{message.reasoning}</p></details>}
+              {message.reasoning && <details className="group/reason mb-2 rounded-lg border border-border bg-muted/40 p-2 text-[10.5px] text-muted-foreground transition-colors hover:border-border/80"><summary className="flex cursor-pointer list-none items-center gap-1.5 select-none"><ChevronRight className="size-3 transition-transform duration-200 ease-soft group-open/reason:rotate-90" />Reasoning</summary><p className="mt-1 whitespace-pre-wrap">{message.reasoning}</p></details>}
               {message.content && <div className="ai-markdown break-words leading-5"><Markdown sqlActions={sqlActions}>{message.content}</Markdown></div>}
               {message.error && <p role="alert" className="mt-1 text-destructive">{message.error}</p>}
               {messageTools.map((tool) => <AIToolCard key={tool.toolCallId} tool={tool} {...sqlActions} />)}

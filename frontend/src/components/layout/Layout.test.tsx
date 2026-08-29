@@ -107,7 +107,7 @@ describe("layout controls", () => {
     const newQuery = screen.getByRole("button", { name: "New query tab" });
     expect(tablist).toHaveClass("h-10");
     expect(tablist.firstElementChild).toContainElement(newQuery);
-    expect(newQuery).toHaveClass("size-8", "bg-primary/15", "text-primary");
+    expect(newQuery).toHaveClass("size-8", "bg-primary/12", "text-primary");
 
     fireEvent.click(newQuery);
     expect(onNewQuery).toHaveBeenCalledOnce();

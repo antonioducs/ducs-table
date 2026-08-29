@@ -43,7 +43,7 @@ function SheetPickerForm({ workbook, onOpenChange, onConfirm, busy = false }: Sh
             Select one sheet from <span className="font-medium text-foreground">{workbook.displayName ?? "this workbook"}</span> to import.
           </DialogDescription>
         </DialogHeader>
-        <p className="truncate rounded-md border border-border bg-muted px-2.5 py-2 font-mono text-[10px] text-muted-foreground" title={workbook.path}>{workbook.path}</p>
+        <p className="truncate rounded-lg border border-border bg-muted px-2.5 py-2 font-mono text-[10.5px] text-muted-foreground" title={workbook.path}>{workbook.path}</p>
         <ScrollArea className="max-h-64 rounded-md border border-border bg-background">
           <fieldset className="grid gap-0.5 p-1.5" disabled={busy}>
             <legend className="sr-only">Workbook sheets</legend>
@@ -53,7 +53,7 @@ function SheetPickerForm({ workbook, onOpenChange, onConfirm, busy = false }: Sh
                 <label
                   key={`${sheet}-${index}`}
                   htmlFor={id}
-                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-[12px] text-foreground hover:bg-accent has-[:checked]:bg-primary/10 has-[:checked]:text-primary"
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-[12px] text-foreground transition-colors duration-150 ease-soft hover:bg-accent has-[:checked]:bg-primary/12 has-[:checked]:text-brand-200"
                 >
                   <input
                     id={id}
@@ -121,7 +121,7 @@ interface OptionProps {
 
 function Option({ id, checked, onChange, label, description, disabled }: OptionProps) {
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5">
+    <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background/70 px-3 py-2.5 transition-colors duration-150 ease-soft hover:border-border/90 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/[0.06]">
       <Checkbox
         id={id}
         checked={checked}

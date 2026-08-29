@@ -17,7 +17,7 @@ concurrency:
 jobs:
   app:
     name: macOS app
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - name: Check out repository

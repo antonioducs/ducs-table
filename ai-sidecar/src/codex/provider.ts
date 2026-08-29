@@ -1,10 +1,14 @@
 import { mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import type { ChatEvent, ChatStartParams, HostToolCallResult, ProviderContext, ProviderStatus, ToolSpec } from '../types.js'
 import { errorMessage, isRecord, type AiProvider } from '../types.js'
 import { codexEnvironment } from '../environment.js'
 import { CodexAppServer, type AppServerNotification, type AppServerRequest } from './app-server.js'
 import { resolveCodexBinary } from './runtime.js'
+
+const require = createRequire(import.meta.url)
+const codexPackage = require('@openai/codex/package.json') as { version: string }
 
 interface ActiveChat {
   chatId: string
@@ -127,11 +131,11 @@ export class CodexProvider implements AiProvider {
         available: true,
         authenticated: current?.type === 'chatgpt',
         account: current,
-        version: '0.144.4',
+        version: codexPackage.version,
         error: null,
       }
     } catch (error) {
-      return { provider: this.name, available: false, authenticated: false, account: null, version: '0.144.4', error: errorMessage(error) }
+      return { provider: this.name, available: false, authenticated: false, account: null, version: codexPackage.version, error: errorMessage(error) }
     }
   }
 

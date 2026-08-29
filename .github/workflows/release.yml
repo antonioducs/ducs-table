@@ -11,20 +11,14 @@ permissions:
 jobs:
   macos:
     name: Sign, notarize, and publish macOS app
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     environment: release
-    env:
-      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -41,6 +35,8 @@ jobs:
             ai-sidecar/package-lock.json
       - name: Validate tag and version alignment
         run: |
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag" || { echo "Release tags must be annotated"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Release commit must be reachable from main"; exit 1; }
           version="${GITHUB_REF_NAME#v}"
           VERSION="$version" node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs'
@@ -56,22 +52,48 @@ jobs:
           }
           NODE
       - name: Require Apple release credentials
+        env:
+          CSC_LINK_BASE64: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_NAME: ${{ secrets.CSC_NAME }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+          for name in CSC_LINK_BASE64 CSC_KEY_PASSWORD CSC_NAME APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER; do
             test -n "${!name:-}" || { echo "Missing release secret: $name"; exit 1; }
           done
-      - name: Import Developer ID certificate
+          case "$CSC_NAME" in
+            "Developer ID Application:"*)
+              echo "CSC_NAME must omit the 'Developer ID Application:' prefix"
+              exit 1
+              ;;
+          esac
+          test "$RUNNER_ARCH" = "ARM64" || { echo "Release runner must be ARM64; got $RUNNER_ARCH"; exit 1; }
+      - name: Import Developer ID certificate and materialize notary key
+        env:
+          CSC_LINK_BASE64: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_NAME: ${{ secrets.CSC_NAME }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
+          umask 077
           certificate="$RUNNER_TEMP/developer-id.p12"
+          api_key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           keychain="$RUNNER_TEMP/ducs-table-signing.keychain-db"
           keychain_password="$(openssl rand -hex 24)"
-          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$certificate"
+          printf '%s' "$CSC_LINK_BASE64" | base64 -D > "$certificate"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$api_key"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security import "$certificate" -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
           security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
           security list-keychain -d user -s "$keychain" login.keychain-db
+          security find-identity -v -p codesigning "$keychain" | grep -F "Developer ID Application: $CSC_NAME"
+          echo "DUCS_CODESIGN_IDENTITY=Developer ID Application: $CSC_NAME" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$api_key" >> "$GITHUB_ENV"
           rm -f "$certificate"
       - name: Install dependencies
         run: |
@@ -89,20 +111,21 @@ jobs:
           npm run test:unit
           npm run ai:test
       - name: Build with Developer ID
-        env:
-          DUCS_CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: npm run build
       - name: Verify Developer ID signature
         run: |
           codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app
           codesign -dv --verbose=4 build/bin/ducs-table.app
       - name: Notarize and staple
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           ditto -c -k --keepParent build/bin/ducs-table.app "$RUNNER_TEMP/notarization.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
             --wait
           xcrun stapler staple build/bin/ducs-table.app
           xcrun stapler validate build/bin/ducs-table.app
@@ -115,13 +138,22 @@ jobs:
           shasum -a 256 "$archive" > "$archive.sha256"
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
       - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             "$RELEASE_ARCHIVE" \
             "$RELEASE_ARCHIVE.sha256" \
             --verify-tag \
             --generate-notes \
-            --title "Duc's Table $GITHUB_REF_NAME"
-      - name: Remove temporary signing keychain
+            --title "Duc's Table $GITHUB_REF_NAME" \
+            "${release_flags[@]}"
+      - name: Remove temporary signing material
         if: always()
-        run: security delete-keychain "$RUNNER_TEMP/ducs-table-signing.keychain-db" 2>/dev/null || true
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ducs-table-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/developer-id.p12"

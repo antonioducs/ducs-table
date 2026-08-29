@@ -1,47 +1,168 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* Bundled locally so the desktop app never depends on the network. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/outfit";
+
+/* ==========================================================================
+   Duc's Table — design tokens
+   Brand: neon green over near-black, matching the application icon.
+   ========================================================================== */
 
 @theme {
-  --color-background: rgb(7 7 9 / 92%);
-  --color-foreground: #f4f4f5;
-  --color-card: rgb(17 17 20 / 76%);
-  --color-card-foreground: #f4f4f5;
-  --color-popover: rgb(20 20 24 / 94%);
-  --color-popover-foreground: #f4f4f5;
-  --color-primary: #7364df;
-  --color-primary-foreground: #ffffff;
-  --color-primary-hover: #7464dc;
-  --color-secondary: rgb(31 31 36 / 88%);
-  --color-secondary-foreground: #e6e6e9;
-  --color-muted: rgb(22 22 26 / 80%);
-  --color-muted-foreground: #92929d;
-  --color-accent: rgb(38 38 44 / 86%);
-  --color-accent-foreground: #fafafa;
-  --color-border: rgb(255 255 255 / 9%);
-  --color-input: rgb(255 255 255 / 14%);
-  --color-ring: #9688ff;
-  --color-destructive: #f87171;
-  --color-warning: #f5c768;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  /* Brand ramp */
+  --color-brand-50: #e9fff3;
+  --color-brand-100: #c8ffe1;
+  --color-brand-200: #97fbc8;
+  --color-brand-300: #61f2a8;
+  --color-brand-400: #34e07f;
+  --color-brand-500: #18c96c;
+  --color-brand-600: #0da95a;
+  --color-brand-700: #0a7f45;
+  --color-brand-800: #08562f;
+  --color-brand-900: #06341e;
+
+  /* Surfaces — translucent so the aurora backdrop reads through the chrome */
+  --color-background: rgb(6 9 8 / 92%);
+  --color-foreground: #eaf2ed;
+  --color-card: rgb(13 18 16 / 76%);
+  --color-card-foreground: #eaf2ed;
+  --color-popover: rgb(15 21 18 / 94%);
+  --color-popover-foreground: #eaf2ed;
+  --color-secondary: rgb(26 34 30 / 88%);
+  --color-secondary-foreground: #dfeae4;
+  --color-muted: rgb(17 23 20 / 80%);
+  --color-muted-foreground: #8b9c93;
+  --color-accent: rgb(33 45 39 / 86%);
+  --color-accent-foreground: #f2fbf6;
+  --color-border: rgb(160 255 205 / 9%);
+  --color-input: rgb(160 255 205 / 14%);
+
+  /* Semantics */
+  --color-primary: #34e07f;
+  --color-primary-foreground: #04170d;
+  --color-primary-hover: #4ceb92;
+  --color-ring: #61f2a8;
+  --color-destructive: #ff6b6b;
+  --color-warning: #ffc857;
+  --color-info: #3ad6e0;
+
+  /* Typography */
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-display: "Outfit Variable", "Inter Variable", -apple-system, sans-serif;
+
+  /* Shape */
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  /* Motion */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --ease-swift: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --animate-ducs-rise: ducs-rise 0.34s var(--ease-soft) both;
+  --animate-ducs-pop: ducs-pop 0.22s var(--ease-spring) both;
+  --animate-ducs-fade: ducs-fade 0.24s var(--ease-swift) both;
+  --animate-ducs-shimmer: ducs-shimmer 1.7s linear infinite;
+  --animate-ducs-sheen: ducs-sheen 0.9s var(--ease-swift);
+  --animate-ducs-breathe: ducs-breathe 2.6s ease-in-out infinite;
+  --animate-ducs-halo: ducs-halo 2.4s ease-in-out infinite;
+  --animate-ducs-dash: ducs-dash 0.7s linear infinite;
+  --animate-ducs-drift-a: ducs-drift-a 34s ease-in-out infinite alternate;
+  --animate-ducs-drift-b: ducs-drift-b 42s ease-in-out infinite alternate;
+  --animate-ducs-spin-slow: ducs-spin-slow 12s linear infinite;
+  --animate-ducs-trace: ducs-trace 1.4s var(--ease-swift) infinite;
+
+  @keyframes ducs-rise {
+    from { opacity: 0; transform: translateY(6px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes ducs-pop {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes ducs-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes ducs-shimmer {
+    from { background-position: -160% 0; }
+    to { background-position: 260% 0; }
+  }
+  @keyframes ducs-sheen {
+    from { transform: translateX(-120%) skewX(-18deg); }
+    to { transform: translateX(240%) skewX(-18deg); }
+  }
+  @keyframes ducs-breathe {
+    0%, 100% { opacity: 0.35; transform: scale(0.86); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes ducs-halo {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(52 224 127 / 32%); }
+    50% { box-shadow: 0 0 0 6px rgb(52 224 127 / 0%); }
+  }
+  @keyframes ducs-dash {
+    to { background-position: 28px 0, -28px 100%, 0 -28px, 100% 28px; }
+  }
+  @keyframes ducs-drift-a {
+    0% { transform: translate3d(-6%, -4%, 0) scale(1); }
+    50% { transform: translate3d(6%, 5%, 0) scale(1.12); }
+    100% { transform: translate3d(-2%, 8%, 0) scale(1.04); }
+  }
+  @keyframes ducs-drift-b {
+    0% { transform: translate3d(5%, 6%, 0) scale(1.05); }
+    50% { transform: translate3d(-7%, -3%, 0) scale(1); }
+    100% { transform: translate3d(3%, -7%, 0) scale(1.1); }
+  }
+  @keyframes ducs-spin-slow {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes ducs-trace {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+  @keyframes ducs-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
 }
 
 :root {
   color-scheme: dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
-  --glass-surface: rgb(16 16 20 / 72%);
-  --glass-surface-strong: rgb(19 19 23 / 90%);
-  --glass-line: rgb(255 255 255 / 9%);
-  --glass-highlight: rgb(255 255 255 / 4%);
-  background: #060608;
-  color: #f4f4f5;
+  font-family: var(--font-sans);
+  /* cv11 gives Inter a single-storey "a": friendlier next to the Outfit display face. */
+  font-feature-settings: "cv11" 1, "ss03" 1;
+  font-optical-sizing: auto;
   font-synthesis: none;
+
+  --void: #040706;
+  --glass-surface: rgb(12 17 15 / 72%);
+  --glass-surface-strong: rgb(15 21 18 / 92%);
+  --glass-line: rgb(160 255 205 / 9%);
+  --glass-highlight: rgb(215 255 235 / 5%);
+  --brand-glow-sm: 0 6px 18px -6px rgb(52 224 127 / 35%);
+  --brand-glow-md: 0 12px 34px -10px rgb(52 224 127 / 42%);
+  --lift-md: 0 18px 44px -22px rgb(0 0 0 / 80%);
+
+  background: var(--void);
+  color: var(--color-foreground);
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-* {
-  box-sizing: border-box;
-  border-color: rgb(255 255 255 / 9%);
+/* In the base layer so Tailwind utilities (`border-transparent`, `border-primary`…)
+   still win; otherwise every element with a border width picks up the hairline. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--glass-line);
+  }
 }
 
 html,
@@ -54,12 +175,11 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(circle at 8% -12%, rgb(106 117 176 / 20%), transparent 34rem),
-    radial-gradient(circle at 94% 112%, rgb(112 81 177 / 10%), transparent 38rem),
-    #060608;
-  color: #f4f4f5;
+  background: var(--void);
+  color: var(--color-foreground);
   font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
   user-select: none;
 }
 
@@ -76,6 +196,7 @@ button,
 input,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
 }
 
 button,
@@ -83,13 +204,318 @@ button,
 input,
 textarea,
 [tabindex] {
-  outline-color: #9688ff;
+  outline-color: var(--color-ring);
 }
 
 ::selection {
-  color: #ffffff;
-  background: rgb(139 124 246 / 30%);
+  color: #04170d;
+  background: rgb(97 242 168 / 55%);
 }
+
+/* ==========================================================================
+   Application shell — living backdrop
+   ========================================================================== */
+
+.ducs-shell {
+  --wails-drop-target: drop;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-width: 1080px;
+  min-height: 680px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgb(13 169 90 / 10%), transparent 60%),
+    linear-gradient(180deg, #061009 0%, var(--void) 42%, #04080a 100%);
+}
+
+/* Two slow-drifting light fields: the app feels alive without distracting. */
+.ducs-shell::before {
+  position: absolute;
+  z-index: -2;
+  inset: -25%;
+  background:
+    radial-gradient(closest-side, rgb(52 224 127 / 16%), transparent 72%) 12% 8% / 46% 52% no-repeat,
+    radial-gradient(closest-side, rgb(24 201 108 / 10%), transparent 70%) 88% 96% / 52% 58% no-repeat,
+    radial-gradient(closest-side, rgb(58 214 224 / 7%), transparent 70%) 92% 4% / 38% 44% no-repeat;
+  content: "";
+  animation: var(--animate-ducs-drift-a);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+/* Second, slower light field rendered as an element so it can drift out of
+   phase with `::before` — the backdrop never repeats visibly. */
+.ducs-aurora {
+  position: absolute;
+  z-index: -2;
+  inset: -30%;
+  background:
+    radial-gradient(closest-side, rgb(97 242 168 / 12%), transparent 70%) 78% 22% / 44% 50% no-repeat,
+    radial-gradient(closest-side, rgb(13 169 90 / 12%), transparent 72%) 18% 82% / 50% 56% no-repeat;
+  animation: var(--animate-ducs-drift-b);
+  filter: blur(34px);
+  pointer-events: none;
+}
+
+/* Film grain keeps large black areas from looking flat and digital. */
+.ducs-shell::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  opacity: 0.42;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  content: "";
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Glass surfaces
+   ========================================================================== */
+
+.ducs-glass-bar,
+.ducs-glass-panel {
+  background:
+    linear-gradient(180deg, var(--glass-highlight), transparent 55%),
+    var(--glass-surface);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  backdrop-filter: blur(22px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgb(215 255 235 / 4%);
+}
+
+.ducs-glass-bar {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgb(215 255 235 / 5%), transparent 72%),
+    rgb(11 16 14 / 84%);
+}
+
+/* Hairline of brand light along the bottom edge of top-level bars. */
+.ducs-glass-bar[data-brand-edge]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(52 224 127 / 32%) 22%, rgb(58 214 224 / 22%) 58%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.ducs-glass-popover {
+  background:
+    linear-gradient(180deg, rgb(215 255 235 / 6%), transparent 40%),
+    var(--glass-surface-strong);
+  -webkit-backdrop-filter: blur(30px) saturate(145%);
+  backdrop-filter: blur(30px) saturate(145%);
+  box-shadow:
+    inset 0 1px 0 rgb(215 255 235 / 6%),
+    0 24px 64px rgb(0 0 0 / 62%);
+}
+
+/* Raised card with a brand-tinted rim: used by empty states and hero panels. */
+.ducs-glass-card {
+  position: relative;
+  border: 1px solid var(--glass-line);
+  background:
+    linear-gradient(180deg, rgb(215 255 235 / 5%), transparent 46%),
+    var(--glass-surface);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: inset 0 1px 0 rgb(215 255 235 / 5%), var(--lift-md);
+}
+
+/* ==========================================================================
+   Motion utilities
+   ========================================================================== */
+
+.ducs-pulse {
+  animation: ducs-pulse 1.3s ease-in-out infinite;
+}
+
+.ducs-rise {
+  animation: var(--animate-ducs-rise);
+}
+
+/* Staggered entry for lists (sidebar rows, cards, feature grids). */
+.ducs-stagger > * {
+  animation: var(--animate-ducs-rise);
+}
+
+.ducs-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.ducs-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.ducs-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.ducs-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.ducs-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.ducs-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* Light sweep across a filled control on hover. */
+.ducs-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.ducs-sheen::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 26%), transparent);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ducs-sheen:hover::after {
+  opacity: 1;
+  animation: var(--animate-ducs-sheen);
+}
+
+.ducs-glow {
+  box-shadow: var(--brand-glow-sm);
+}
+
+/* Indeterminate progress line for streaming/preparing states. */
+.ducs-trace {
+  position: relative;
+  overflow: hidden;
+}
+
+.ducs-trace::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 33%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+  content: "";
+  animation: var(--animate-ducs-trace);
+}
+
+.ducs-skeleton {
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(90deg, rgb(160 255 205 / 4%) 0%, rgb(160 255 205 / 12%) 48%, rgb(160 255 205 / 4%) 100%)
+    0 0 / 220% 100%;
+  animation: var(--animate-ducs-shimmer);
+}
+
+/* Animated dashed frame for drop targets. */
+.ducs-marching {
+  background-image:
+    linear-gradient(90deg, var(--color-primary) 55%, transparent 0),
+    linear-gradient(90deg, var(--color-primary) 55%, transparent 0),
+    linear-gradient(0deg, var(--color-primary) 55%, transparent 0),
+    linear-gradient(0deg, var(--color-primary) 55%, transparent 0);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-size: 14px 2px, 14px 2px, 2px 14px, 2px 14px;
+  animation: var(--animate-ducs-dash);
+}
+
+/* Live status dot with a soft halo. */
+.ducs-live-dot {
+  position: relative;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 10px 1px rgb(52 224 127 / 55%);
+}
+
+.ducs-live-dot::after {
+  position: absolute;
+  inset: -3px;
+  border: 1px solid rgb(52 224 127 / 45%);
+  border-radius: 999px;
+  content: "";
+  animation: var(--animate-ducs-breathe);
+}
+
+.ducs-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ducs-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.ducs-eyebrow {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ducs-kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--glass-line);
+  border-radius: 5px;
+  background: rgb(160 255 205 / 6%);
+  padding: 0 4px;
+  color: var(--color-muted-foreground);
+  /* System stack first: it carries the ⌘/⌥/⇧ glyphs that Inter and JetBrains
+     Mono do not include. */
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Brand gradient text for hero headings and the wordmark. */
+.ducs-brand-text {
+  background: linear-gradient(100deg, #f4fff8 6%, var(--color-brand-200) 46%, var(--color-brand-400) 92%);
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ==========================================================================
+   Scrollbars
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 30px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgb(160 255 205 / 14%);
+  background-clip: padding-box;
+  transition: background-color 0.15s var(--ease-swift);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(97 242 168 / 34%);
+  background-clip: padding-box;
+}
+
+.font-mono,
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+/* ==========================================================================
+   AI markdown
+   ========================================================================== */
 
 .ai-markdown p + p,
 .ai-markdown ul + p,
@@ -105,153 +531,129 @@ textarea,
   list-style: revert;
 }
 
+.ai-markdown a {
+  color: var(--color-brand-300);
+  text-decoration-color: rgb(97 242 168 / 40%);
+  text-underline-offset: 2px;
+}
+
+.ai-markdown code:not(pre code) {
+  border-radius: 5px;
+  background: rgb(160 255 205 / 8%);
+  padding: 1px 4px;
+  color: var(--color-brand-200);
+  font-size: 0.92em;
+}
+
 .ai-markdown pre:has(> code) {
   margin: 0.5rem 0;
   overflow: auto;
-  border: 1px solid rgb(255 255 255 / 9%);
-  border-radius: 6px;
-  padding: 0.5rem;
-  background: rgb(5 5 7 / 70%);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-sm);
+  background: rgb(4 8 6 / 76%);
+  padding: 0.6rem 0.7rem;
+  box-shadow: inset 0 1px 0 rgb(215 255 235 / 4%);
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+/* ==========================================================================
+   Data grid (AG Grid) — brand chrome
+   Token values live in components/data-grid/data-grid.css; this block only
+   carries the visual treatment shared by every grid surface.
+   ========================================================================== */
 
-::-webkit-scrollbar-track {
+.ducs-data-grid .ag-root-wrapper {
+  border: 0;
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  min-height: 30px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: #303038;
-  background-clip: padding-box;
+.ducs-data-grid .ag-header {
+  border-bottom: 1px solid rgb(160 255 205 / 10%);
+  background: linear-gradient(180deg, rgb(215 255 235 / 4%), transparent), var(--ag-header-background-color);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #45454f;
-  background-clip: padding-box;
+/* Column names are SQL identifiers, so they keep the monospace face. */
+.ducs-data-grid .ag-header-cell-text {
+  color: #a9bdb2;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
-.font-mono,
-code,
-pre {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+.ducs-data-grid .ag-header-cell,
+.ducs-data-grid .ag-cell {
+  border-right: 1px solid rgb(160 255 205 / 5%);
 }
 
-.ducs-shell {
-  --wails-drop-target: drop;
-  position: relative;
-  isolation: isolate;
-  width: 100%;
-  height: 100%;
-  min-width: 1080px;
-  min-height: 680px;
-  background:
-    radial-gradient(circle at 4% 0%, rgb(94 106 164 / 16%), transparent 32rem),
-    radial-gradient(circle at 100% 100%, rgb(115 85 174 / 8%), transparent 40rem),
-    #070709;
-}
-
-.ducs-glass-bar,
-.ducs-glass-panel {
-  background:
-    linear-gradient(180deg, var(--glass-highlight), transparent 55%),
-    var(--glass-surface);
-  -webkit-backdrop-filter: blur(22px) saturate(130%);
-  backdrop-filter: blur(22px) saturate(130%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
-}
-
-.ducs-glass-bar {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 5%), transparent 72%),
-    rgb(15 15 18 / 82%);
-}
-
-.ducs-glass-popover {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 6%), transparent 40%),
-    var(--glass-surface-strong);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-  backdrop-filter: blur(28px) saturate(140%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 5%),
-    0 22px 60px rgb(0 0 0 / 58%);
-}
-
-.ducs-grid.ag-theme-quartz-dark,
-.ducs-grid.ag-theme-quartz {
-  --ag-background-color: #0a0a0d;
-  --ag-foreground-color: #dedee4;
-  --ag-header-background-color: #121216;
-  --ag-header-foreground-color: #c6c6ce;
-  --ag-border-color: rgb(255 255 255 / 9%);
-  --ag-secondary-border-color: rgb(255 255 255 / 6%);
-  --ag-row-border-color: rgb(255 255 255 / 6%);
-  --ag-odd-row-background-color: #0d0d10;
-  --ag-row-hover-color: rgb(139 124 246 / 7%);
-  --ag-selected-row-background-color: rgb(139 124 246 / 13%);
-  --ag-input-focus-border-color: #8b7cf6;
-  --ag-range-selection-border-color: #8b7cf6;
-  --ag-checkbox-checked-color: #8b7cf6;
-  --ag-accent-color: #8b7cf6;
-  --ag-icon-color: #8d8d98;
-  --ag-header-column-resize-handle-color: #3d3d47;
-  --ag-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
-  --ag-font-size: 12px;
-  --ag-grid-size: 5px;
-  --ag-border-radius: 0;
-  --ag-wrapper-border-radius: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.ducs-grid .ag-root-wrapper {
-  border: 0;
-  background: #0a0a0d;
-}
-
-.ducs-grid .ag-header {
-  border-bottom: 1px solid rgb(255 255 255 / 9%);
-}
-
-.ducs-grid .ag-header-cell,
-.ducs-grid .ag-cell {
-  border-right: 1px solid rgb(255 255 255 / 6%);
-}
-
-.ducs-grid .ag-cell {
+.ducs-data-grid .ag-cell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: background-color 0.12s var(--ease-swift);
 }
 
-.ducs-grid .ag-cell-focus,
-.ducs-grid .ag-cell-range-selected {
-  border-color: #8b7cf6 !important;
+.ducs-data-grid .ag-row {
+  transition: background-color 0.14s var(--ease-swift);
 }
 
-.ducs-grid .ag-overlay-no-rows-center,
-.ducs-grid .ag-overlay-loading-center {
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 8px;
-  background: rgb(18 18 22 / 86%);
-  color: #92929d;
+/* Brand marker on the hovered row keeps long horizontal scans oriented. */
+.ducs-data-grid .ag-row-hover::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 2px;
+  background: var(--color-primary);
+  content: "";
+  opacity: 0.8;
+}
+
+.ducs-data-grid .ag-cell-focus,
+.ducs-data-grid .ag-cell-range-selected {
+  border-color: var(--color-primary) !important;
+}
+
+.ducs-data-grid .ag-header-cell-resize::after {
+  background: rgb(160 255 205 / 16%);
+}
+
+.ducs-data-grid .ag-overlay-no-rows-center,
+.ducs-data-grid .ag-overlay-loading-center {
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-md);
+  background: rgb(15 21 18 / 88%);
+  padding: 10px 14px;
+  color: var(--color-muted-foreground);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+  box-shadow: inset 0 1px 0 rgb(215 255 235 / 4%), var(--lift-md);
 }
+
+/* Inline filter row: match the input treatment used across the app. */
+.ducs-data-grid .ag-floating-filter-input input,
+.ducs-data-grid .ag-filter input {
+  border-radius: 6px;
+  transition: border-color 0.15s var(--ease-swift), box-shadow 0.15s var(--ease-swift);
+}
+
+.ducs-data-grid .ag-floating-filter-input input:focus,
+.ducs-data-grid .ag-filter input:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgb(52 224 127 / 14%);
+}
+
+/* ==========================================================================
+   SQL editor (CodeMirror)
+   ========================================================================== */
 
 .cm-editor {
   height: 100%;
-  background: rgb(8 8 11 / 88%) !important;
-  color: #dedee4;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  background: rgb(5 9 7 / 88%) !important;
+  color: #dceae3;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .cm-editor.cm-focused {
@@ -278,33 +680,38 @@ pre {
 }
 
 .cm-gutters {
-  border-right: 1px solid rgb(255 255 255 / 6%) !important;
-  background: rgb(14 14 18 / 82%) !important;
-  color: #5f5f6b !important;
+  border-right: 1px solid rgb(160 255 205 / 6%) !important;
+  background: rgb(9 14 12 / 84%) !important;
+  color: #55655d !important;
 }
 
-.cm-activeLine,
+.cm-activeLine {
+  background: rgb(52 224 127 / 5%) !important;
+}
+
 .cm-activeLineGutter {
-  background: rgb(139 124 246 / 6%) !important;
+  background: rgb(52 224 127 / 8%) !important;
+  color: var(--color-brand-300) !important;
 }
 
 .cm-cursor {
-  border-left-color: #8b7cf6 !important;
+  border-left: 2px solid var(--color-primary) !important;
 }
 
 .cm-selectionBackground,
 .cm-content ::selection {
-  background: rgb(139 124 246 / 22%) !important;
+  background: rgb(52 224 127 / 24%) !important;
 }
 
-@keyframes ducs-pulse {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+.cm-matchingBracket {
+  outline: 1px solid rgb(97 242 168 / 45%);
+  background: rgb(52 224 127 / 12%) !important;
+  color: inherit !important;
 }
 
-.ducs-pulse {
-  animation: ducs-pulse 1.3s ease-in-out infinite;
-}
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -314,5 +721,9 @@ pre {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .ducs-shell::before {
+    animation: none !important;
   }
 }

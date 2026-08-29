@@ -4,19 +4,46 @@ import { cn } from "@/lib/utils";
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const buttonVariants = cva(
-  "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent px-3 text-[12px] font-medium outline-none transition-[color,background-color,border-color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-3.5",
+  [
+    "relative inline-flex h-8 shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3",
+    "text-[12px] font-medium tracking-[-0.005em] outline-none",
+    "transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-150 ease-soft",
+    "active:scale-[0.975] motion-reduce:active:scale-100",
+    "focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+    "disabled:pointer-events-none disabled:opacity-40 disabled:saturate-50",
+    "[&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:transition-transform [&_svg]:duration-200",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.16),0_8px_24px_rgba(79,70,229,.16)] hover:bg-primary-hover hover:shadow-[inset_0_1px_0_rgba(255,255,255,.2),0_10px_28px_rgba(79,70,229,.22)]",
-        secondary: "border-border bg-secondary/90 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,.035)] hover:border-white/15 hover:bg-accent",
+        default: [
+          "ducs-sheen bg-gradient-to-b from-brand-300 to-brand-400 text-primary-foreground",
+          "shadow-[inset_0_1px_0_rgba(255,255,255,.35),0_8px_22px_-8px_rgba(52,224,127,.55)]",
+          "hover:from-brand-200 hover:to-brand-300 hover:shadow-[inset_0_1px_0_rgba(255,255,255,.45),0_12px_30px_-8px_rgba(52,224,127,.7)]",
+        ].join(" "),
+        secondary: [
+          "border-border bg-secondary/90 text-foreground shadow-[inset_0_1px_0_rgba(215,255,235,.05)]",
+          "hover:border-primary/25 hover:bg-accent hover:text-foreground hover:shadow-[inset_0_1px_0_rgba(215,255,235,.08),0_6px_18px_-10px_rgba(52,224,127,.35)]",
+        ].join(" "),
         ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
-        outline: "border-border bg-transparent text-foreground hover:border-white/20 hover:bg-accent",
-        destructive: "bg-destructive text-white hover:bg-[#ff7979]",
+        outline: [
+          "border-border bg-transparent text-foreground",
+          "hover:border-primary/40 hover:bg-primary/[0.07] hover:text-foreground",
+        ].join(" "),
+        destructive: [
+          "bg-destructive/90 text-white shadow-[inset_0_1px_0_rgba(255,255,255,.2),0_8px_22px_-10px_rgba(255,107,107,.6)]",
+          "hover:bg-destructive hover:shadow-[inset_0_1px_0_rgba(255,255,255,.28),0_12px_28px_-10px_rgba(255,107,107,.75)]",
+        ].join(" "),
+        brand: [
+          "border-primary/30 bg-primary/12 text-primary",
+          "shadow-[inset_0_1px_0_rgba(215,255,235,.06)]",
+          "hover:border-primary/50 hover:bg-primary/20 hover:text-brand-200",
+        ].join(" "),
       },
       size: {
         default: "h-8 px-3",
         sm: "h-7 px-2.5 text-[11px]",
+        lg: "h-9 gap-2 px-4 text-[13px] [&_svg]:size-4",
         icon: "size-8 p-0",
         "icon-sm": "size-7 p-0",
       },

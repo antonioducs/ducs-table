@@ -99,14 +99,14 @@ export function ConnectionTree(props: ConnectionTreeProps) {
   return <div className="pb-1">
     <div className="flex items-center gap-1.5 px-2 pb-2">
       <div className="relative min-w-0 flex-1">
-        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70 transition-colors duration-150 peer-focus:text-primary" aria-hidden="true" />
         <Input
           type="search"
           value={tableFilter}
           onChange={(event) => setTableFilter(event.target.value)}
           placeholder="Search tables"
           aria-label="Search connection tables"
-          className="h-7 pl-7 pr-7 text-[10px]"
+          className="peer h-7 pl-8 pr-7 text-[11px]"
         />
         {tableFilter && <Button variant="ghost" size="icon-sm" className="absolute right-1 top-1/2 size-5 -translate-y-1/2" onClick={() => setTableFilter("")} aria-label="Clear table search"><X aria-hidden="true" /></Button>}
       </div>
@@ -133,17 +133,20 @@ export function ConnectionTree(props: ConnectionTreeProps) {
       return !relations || relations.some((relation) => relation.name.toLocaleLowerCase().includes(normalizedFilter));
     });
     return <div key={connection.id}>
-      <div className="group mx-1 flex items-center rounded-md hover:bg-accent">
+      <div className="group mx-1 my-0.5 flex items-center rounded-lg border border-transparent transition-[background-color,border-color] duration-200 ease-soft hover:border-border hover:bg-accent/80">
         <Button variant="ghost" size="icon-sm" className="mr-1 size-6" aria-label={`${expanded ? "Collapse" : "Expand"} ${connection.name}`} onClick={() => toggleConnection(connection)}>
-          <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
+          <ChevronRight className={cn("size-3 transition-transform duration-200 ease-soft", expanded && "rotate-90")} />
         </Button>
         <button type="button" onClick={() => toggleConnection(connection)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left">
-          <DatabaseZap className={cn("size-3.5 shrink-0", connection.status === "connected" ? "text-primary" : "text-muted-foreground")} />
-          <span className="min-w-0 flex-1 truncate text-[11px]">{connection.name}</span>
-          {connection.kind === "mongo" && <Badge variant="warning" className="h-4 px-1 text-[8px]">Experimental</Badge>}
-          <Badge variant={connection.status === "connected" ? "default" : connection.status === "error" ? "destructive" : connection.status === "connecting" ? "warning" : "muted"} className="h-4 px-1 text-[8px]">{connection.status}</Badge>
+          <span className="relative grid size-3.5 shrink-0 place-items-center">
+            <DatabaseZap className={cn("size-3.5 transition-colors duration-200", connection.status === "connected" ? "text-primary" : "text-muted-foreground")} />
+            {connection.status === "connected" && <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(52,224,127,.9)]" />}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[11.5px]">{connection.name}</span>
+          {connection.kind === "mongo" && <Badge variant="warning" className="h-4 shrink-0 px-1 text-[8px]">Experimental</Badge>}
+          <Badge variant={connection.status === "connected" ? "default" : connection.status === "error" ? "destructive" : connection.status === "connecting" ? "warning" : "muted"} className="mr-1 h-4 shrink-0 px-1 text-[8px]">{connection.status}</Badge>
         </button>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="mr-1 size-6 opacity-60 group-hover:opacity-100" aria-label={`Actions for ${connection.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" side="right">
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="mr-1 size-6 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-80 group-focus-within:opacity-100" aria-label={`Actions for ${connection.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" side="right">
           {connection.status === "connected" ? <DropdownMenuItem onSelect={() => props.onDisconnect(connection)}><PlugZap /> Disconnect</DropdownMenuItem> : <DropdownMenuItem onSelect={() => props.onConnect(connection)}><Plug /> Connect</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => props.onEdit(connection)}><Edit3 /> Edit</DropdownMenuItem>
           <DropdownMenuItem disabled={connection.status !== "connected"} onSelect={() => props.onRefresh(connection)}><RefreshCw /> Refresh catalog</DropdownMenuItem>
@@ -153,7 +156,7 @@ export function ConnectionTree(props: ConnectionTreeProps) {
       {expanded && <div className="ml-4 border-l border-border pl-1">
         {loading && <p className="px-2 py-1.5 text-[9px] text-muted-foreground">Loading catalog…</p>}
         {props.errors[connection.id] && <p className="px-2 py-1.5 text-[9px] text-destructive">{props.errors[connection.id]}</p>}
-        {!loading && connection.status !== "connected" && <button className="flex items-center gap-1 px-2 py-1.5 text-[9px] text-primary" onClick={() => props.onConnect(connection)}><Plug className="size-3" /> Connect to browse</button>}
+        {!loading && connection.status !== "connected" && <button className="flex items-center gap-1 rounded px-2 py-1.5 text-[10px] text-primary transition-colors hover:text-brand-200" onClick={() => props.onConnect(connection)}><Plug className="size-3" /> Connect to browse</button>}
         {!loading && connection.status === "connected" && schemas?.length === 0 && <p className="px-2 py-1.5 text-[9px] text-muted-foreground">No schemas found</p>}
         {!loading && normalizedFilter && schemas && visibleSchemas?.length === 0 && <p className="px-2 py-1.5 text-[9px] text-muted-foreground">No tables match “{tableFilter.trim()}”</p>}
         {visibleSchemas?.map((schema) => {
@@ -161,9 +164,9 @@ export function ConnectionTree(props: ConnectionTreeProps) {
           const matchingRelations = normalizedFilter ? relations?.filter((relation) => relation.name.toLocaleLowerCase().includes(normalizedFilter)) : relations;
           const schemaExpanded = expandedSchemas.has(key) || Boolean(normalizedFilter);
           return <div key={schema}>
-            <div className="group/schema flex items-center rounded-md hover:bg-accent">
+            <div className="group/schema flex items-center rounded-md transition-colors duration-150 hover:bg-accent/70">
               <button type="button" onClick={() => toggleSchema(connection, schema)} className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-[10px] hover:text-primary">
-                <ChevronRight className={cn("size-3 shrink-0 transition-transform", schemaExpanded && "rotate-90")} /><Database className="size-3 shrink-0 text-muted-foreground" /><span className="truncate">{schema}</span>
+                <ChevronRight className={cn("size-3 shrink-0 transition-transform duration-200 ease-soft", schemaExpanded && "rotate-90")} /><Database className="size-3 shrink-0 text-muted-foreground" /><span className="truncate">{schema}</span>
               </button>
               {!normalizedFilter && <Button variant="ghost" size="icon-sm" className="mr-1 size-5 shrink-0 opacity-0 group-hover/schema:opacity-100 group-focus-within/schema:opacity-100" onClick={() => hideSchema(connection, schema)} aria-label={`Hide schema ${schema}`}><EyeOff aria-hidden="true" /></Button>}
             </div>
@@ -181,7 +184,8 @@ export function ConnectionTree(props: ConnectionTreeProps) {
 }
 
 function RelationRow({ relation, active, onOpenRelation, onInsertRelation, onCopyRelation, onSnapshotRelation }: Pick<ConnectionTreeProps, "onOpenRelation" | "onInsertRelation" | "onCopyRelation" | "onSnapshotRelation"> & { relation: ExternalRelationInfo; active: boolean }) {
-  return <div className={cn("group flex items-center rounded-md", active ? "bg-primary/10 text-primary" : "hover:bg-accent")}>
+  return <div className={cn("group relative flex items-center rounded-md transition-colors duration-150", active ? "bg-primary/12 text-brand-200" : "hover:bg-accent/70")}>
+    {active && <span aria-hidden="true" className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary shadow-[0_0_8px_rgba(52,224,127,.8)]" />}
     <button type="button" onClick={() => onOpenRelation(relation)} className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-left"><Table2 className="size-3" /><span className="truncate text-[10px]">{relation.name}</span></button>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="mr-1 size-5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" aria-label={`Actions for ${relation.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" side="right">
       <DropdownMenuItem onSelect={() => onOpenRelation(relation)}><Table2 /> Open live</DropdownMenuItem>

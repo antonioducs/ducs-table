@@ -15,21 +15,21 @@ function formatCell(value: unknown): string {
 
 export function AIPreviewTable({ result }: { result: AIPreviewResult }) {
   return (
-    <div className="ducs-selectable-text mt-2 overflow-hidden rounded-md border border-border bg-card" aria-label="Query preview">
+    <div className="ducs-selectable-text mt-2 overflow-hidden rounded-xl border border-border bg-card" aria-label="Query preview">
       <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-2 py-1 text-[9px] text-muted-foreground">
         <span>{result.rows.length} {result.rows.length === 1 ? "row" : "rows"}</span>
         <span aria-hidden="true">·</span>
         <span>{formatBytes(result.bytes)}</span>
-        {result.truncated && <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-300">Preview truncated</span>}
+        {result.truncated && <span className="ml-auto rounded-full border border-warning/25 bg-warning/12 px-1.5 py-0.5 font-medium text-warning">Preview truncated</span>}
       </div>
       <div className="max-h-56 overflow-auto">
         <table aria-label="Query preview data" className="w-max min-w-full border-collapse text-left font-mono text-[9px]">
-          <thead className="sticky top-0 z-10 bg-muted">
+          <thead className="sticky top-0 z-10 bg-[rgb(16_22_19)] backdrop-blur-sm">
             <tr>{result.columns.map((column, columnIndex) => <th key={`${columnIndex}:${column}`} scope="col" className="max-w-56 border-b border-r border-border px-2 py-1 font-semibold text-foreground last:border-r-0">{column}</th>)}</tr>
           </thead>
           <tbody>
             {result.rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="odd:bg-background even:bg-muted/20">
+              <tr key={rowIndex} className="transition-colors duration-100 odd:bg-background even:bg-muted/20 hover:bg-primary/[0.06]">
                 {result.columns.map((column, columnIndex) => {
                   const text = formatCell(row[column]);
                   const isNull = row[column] === null || row[column] === undefined;

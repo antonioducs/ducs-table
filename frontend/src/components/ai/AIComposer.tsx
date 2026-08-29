@@ -34,7 +34,7 @@ export function AIComposer({ disabled, modelSelectionDisabled, running, placehol
   };
   return (
     <div className="ducs-glass-bar border-t border-border bg-card p-2">
-      <div className="rounded-xl border border-white/10 bg-black/25 px-2.5 pb-2 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,.035),0_12px_32px_rgba(0,0,0,.16)] backdrop-blur-xl focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-ring/70">
+      <div className="rounded-xl border border-border bg-black/30 px-2.5 pb-2 pt-2 shadow-[inset_0_1px_0_rgba(215,255,235,.04),0_12px_32px_-16px_rgba(0,0,0,.6)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 ease-soft focus-within:border-primary/45 focus-within:shadow-[inset_0_1px_0_rgba(215,255,235,.06),0_0_0_3px_rgba(52,224,127,.12)]">
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -45,7 +45,7 @@ export function AIComposer({ disabled, modelSelectionDisabled, running, placehol
           placeholder={placeholder ?? "Ask about this project…"}
           disabled={disabled}
           rows={4}
-          className="w-full resize-none bg-transparent px-0.5 py-1 text-[12px] leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
+          className="w-full resize-none bg-transparent px-0.5 py-1 text-[12.5px] leading-5 outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
         />
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 border-t border-border/60 pt-1.5">
           <Select
@@ -54,7 +54,7 @@ export function AIComposer({ disabled, modelSelectionDisabled, running, placehol
             disabled={disabled || running || efforts.length === 0}
           >
             <SelectTrigger aria-label="AI effort" className="h-7 w-auto min-w-20 gap-1 border-0 bg-transparent px-1.5 text-[10px] shadow-none hover:bg-accent">
-              <Brain className="size-3.5 text-violet-400" /><SelectValue placeholder="Effort" />
+              <Brain className="size-3.5 text-info" /><SelectValue placeholder="Effort" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="default">Default effort</SelectItem>
@@ -70,7 +70,7 @@ export function AIComposer({ disabled, modelSelectionDisabled, running, placehol
             onClick={() => onFastModeChange(!config?.fastMode)}
             className={cn(
               "flex h-7 items-center gap-1 rounded-md px-1.5 text-[10px] transition-colors disabled:opacity-40",
-              config?.fastMode ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/20" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              config?.fastMode ? "bg-warning/15 text-warning hover:bg-warning/20" : "text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >
             <Zap className={cn("size-3.5", config?.fastMode && "fill-current")} />Fast
@@ -84,7 +84,7 @@ export function AIComposer({ disabled, modelSelectionDisabled, running, placehol
             }}
             disabled={(modelSelectionDisabled ?? disabled) || running || models.length === 0}
           >
-            <SelectTrigger aria-label="Composer AI model" className="h-7 min-w-0 flex-1 gap-1 border-0 bg-transparent px-1.5 text-[10px] shadow-none hover:bg-accent">
+            <SelectTrigger aria-label="Composer AI model" className="h-7 min-w-0 flex-1 gap-1 border-0 bg-transparent px-1.5 text-[10px] shadow-none hover:bg-accent [&>span]:min-w-0 [&>span]:truncate">
               <SelectValue placeholder="Choose model" />
             </SelectTrigger>
             <SelectContent>

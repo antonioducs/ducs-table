@@ -53,14 +53,25 @@ function JobRow({ job, projectName, onCancel }: { job: Job; projectName: string;
   const elapsed = formatElapsed(job.startedAt ?? job.createdAt, job.finishedAt);
 
   return (
-    <article className="grid gap-2.5 border-b border-border p-3 last:border-b-0" data-job-state={job.state}>
+    <article
+      className={cn(
+        "grid animate-ducs-rise gap-2.5 border-b border-border p-3 transition-colors duration-200 last:border-b-0 hover:bg-white/[0.02]",
+        job.state === "running" && "bg-primary/[0.03]",
+      )}
+      data-job-state={job.state}
+    >
       <div className="flex min-w-0 items-start gap-2">
-        <span className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-muted">
+        <span className={cn(
+          "grid size-7 shrink-0 place-items-center rounded-lg border border-border bg-muted",
+          job.state === "running" && "border-warning/30 bg-warning/10",
+          job.state === "completed" && "border-primary/25 bg-primary/10",
+          job.state === "failed" && "border-destructive/30 bg-destructive/10",
+        )}>
           <Icon className={cn("size-3.5", details.iconClassName)} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[12px] font-medium text-foreground" title={title}>{title}</h3>
-          <p className="mt-0.5 truncate text-[9px] uppercase tracking-wide text-muted-foreground">{job.kind} · {projectName}</p>
+          <p className="ducs-eyebrow mt-0.5 truncate text-muted-foreground/80">{job.kind} · {projectName}</p>
         </div>
         <Badge variant={details.variant} className="h-4 px-1.5 text-[8px] uppercase leading-none">{details.label}</Badge>
       </div>
@@ -79,15 +90,18 @@ function JobRow({ job, projectName, onCancel }: { job: Job; projectName: string;
 
       {progress !== undefined && (job.state === "running" || job.state === "completed") && (
         <div className="pl-9">
-          <div className="h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`Progress for ${title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+          <div className="h-1.5 overflow-hidden rounded-full border border-border/60 bg-black/40" role="progressbar" aria-label={`Progress for ${title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-brand-500 via-primary to-brand-200 shadow-[0_0_10px_rgba(52,224,127,.7)] transition-[width] duration-500 ease-soft"
+              style={{ width: `${progress}%` }}
+            />
           </div>
-          <p className="mt-1 text-right text-[9px] text-muted-foreground">{progress}%</p>
+          <p className="ducs-num mt-1 text-right text-[9.5px] text-muted-foreground">{progress}%</p>
         </div>
       )}
 
       <div className="flex items-center gap-2 pl-9 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><Clock3 className="size-3" aria-hidden="true" /> Elapsed {elapsed}</span>
+        <span className="ducs-num flex items-center gap-1"><Clock3 className="size-3" aria-hidden="true" /> Elapsed {elapsed}</span>
         {cancellable && (
           <Button
             variant="ghost"
@@ -110,7 +124,8 @@ export function JobsPanel({ open, onOpenChange, jobs, projects = [], activeProje
   const rows = (items: readonly Job[]) => items.map((job) => <JobRow key={job.id} job={job} projectName={projectNames[job.projectId] ?? "Unknown project"} onCancel={onCancel} />);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="left-auto right-0 top-0 h-dvh max-h-none w-[390px] max-w-[calc(100%-2rem)] grid-rows-[auto_1fr] translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-r-0 p-0">
+      {/* Side drawer: overrides the dialog's centered zoom with a right-edge slide. */}
+      <DialogContent className="left-auto right-0 top-0 h-dvh max-h-none w-[390px] max-w-[calc(100%-2rem)] grid-rows-[auto_1fr] translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-r-0 p-0 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100">
         <DialogHeader className="border-b border-border px-4 py-3 pr-11">
           <div className="flex items-center gap-2">
             <DialogTitle>Jobs</DialogTitle>
@@ -121,19 +136,19 @@ export function JobsPanel({ open, onOpenChange, jobs, projects = [], activeProje
         <ScrollArea className="min-h-0" aria-live="polite">
           {jobs.length > 0 ? <>
             {activeProjectId && <section aria-label="Current project jobs">
-              <h2 className="sticky top-0 z-10 border-b border-border bg-popover px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Current project · {projectNames[activeProjectId] ?? "Unknown project"}</h2>
+              <h2 className="ducs-eyebrow sticky top-0 z-10 border-b border-border bg-popover/95 px-3 py-2 text-muted-foreground/85 backdrop-blur-sm">Current project · {projectNames[activeProjectId] ?? "Unknown project"}</h2>
               {currentJobs.length ? rows(currentJobs) : <p className="border-b border-border px-3 py-3 text-[10px] text-muted-foreground">No jobs for the current project.</p>}
             </section>}
             <section aria-label="Other projects jobs">
-              <h2 className="sticky top-0 z-10 border-b border-border bg-popover px-3 py-2 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Other projects</h2>
+              <h2 className="ducs-eyebrow sticky top-0 z-10 border-b border-border bg-popover/95 px-3 py-2 text-muted-foreground/85 backdrop-blur-sm">Other projects</h2>
               {otherJobs.length ? rows(otherJobs) : <p className="px-3 py-3 text-[10px] text-muted-foreground">No jobs from other projects.</p>}
             </section>
           </> : (
             <div className="grid min-h-56 place-items-center p-6 text-center">
-              <div>
-                <CheckCircle2 className="mx-auto size-6 text-primary/70" aria-hidden="true" />
-                <p className="mt-2 text-[12px] font-medium text-foreground">No jobs yet</p>
-                <p className="mt-1 text-[10px] text-muted-foreground">Local activity will appear here.</p>
+              <div className="ducs-rise">
+                <span className="ducs-glass-card mx-auto grid size-11 place-items-center rounded-xl text-primary"><CheckCircle2 className="size-5" aria-hidden="true" /></span>
+                <p className="ducs-display mt-3 text-[13px] text-foreground">No jobs yet</p>
+                <p className="mt-1 text-[10.5px] text-muted-foreground">Local activity will appear here.</p>
               </div>
             </div>
           )}

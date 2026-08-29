@@ -16,9 +16,9 @@ export function AIToolCard({ tool, ...sqlActions }: { tool: AIToolActivity } & O
   const preview = tool.name === "preview_query" ? readAIPreviewResult(tool.output) : undefined;
   const Icon = tool.status === "running" ? LoaderCircle : tool.status === "error" ? XCircle : CheckCircle2;
   return (
-    <div className="my-2 rounded-md border border-border bg-background/60 p-2 text-[10px]">
+    <div className="my-2 animate-ducs-rise rounded-xl border border-border bg-background/60 p-2 text-[10.5px]">
       <div className="flex items-center gap-1.5">
-        <Wrench className="size-3 text-muted-foreground" />
+        <Wrench className="size-3 text-primary/70" />
         <span className="font-mono text-foreground">{tool.name}</span>
         <Icon className={cn("ml-auto size-3", tool.status === "running" && "animate-spin text-primary", tool.status === "error" && "text-destructive", tool.status === "complete" && "text-primary")} />
       </div>
@@ -26,7 +26,7 @@ export function AIToolCard({ tool, ...sqlActions }: { tool: AIToolActivity } & O
       {sql && <AISQLCard sql={sql} {...sqlActions} />}
       {preview && <AIPreviewTable result={preview} />}
       {tool.status !== "running" && tool.output !== undefined && !preview && (!sql || tool.name === "preview_query") && (
-        <details className="mt-1 text-muted-foreground"><summary className="cursor-pointer">Tool output</summary><pre className="ducs-selectable-text mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify(tool.output, null, 2)}</pre></details>
+        <details className="group/out mt-1 text-muted-foreground"><summary className="cursor-pointer select-none transition-colors hover:text-foreground">Tool output</summary><pre className="ducs-selectable-text mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify(tool.output, null, 2)}</pre></details>
       )}
     </div>
   );

@@ -56,17 +56,50 @@ export function ExportDialog({ open, onOpenChange, busy, onExport }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>Export CSV</DialogTitle><DialogDescription>DuckDB writes directly to the destination you choose. Rows never pass through the web view.</DialogDescription></DialogHeader>
-        <div className="grid gap-2">
-          <button disabled={busy} onClick={() => onExport("entire")} className="flex items-start gap-3 rounded-lg border border-border bg-background p-3 text-left outline-none hover:border-primary/35 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
-            <Table2 className="mt-0.5 size-4 text-primary" /><span><span className="block text-[12px] font-medium">Entire table or result</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Every row and column in the source.</span></span>
-          </button>
-          <button disabled={busy} onClick={() => onExport("current-view")} className="flex items-start gap-3 rounded-lg border border-border bg-background p-3 text-left outline-none hover:border-primary/35 hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
-            <Eye className="mt-0.5 size-4 text-primary" /><span><span className="block text-[12px] font-medium">Current view</span><span className="mt-0.5 block text-[10px] text-muted-foreground">Visible columns in order, with active filters and sorting.</span></span>
-          </button>
+        <div className="ducs-stagger grid gap-2">
+          <ExportChoice
+            busy={busy}
+            icon={<Table2 />}
+            title="Entire table or result"
+            detail="Every row and column in the source."
+            onSelect={() => onExport("entire")}
+          />
+          <ExportChoice
+            busy={busy}
+            icon={<Eye />}
+            title="Current view"
+            detail="Visible columns in order, with active filters and sorting."
+            onSelect={() => onExport("current-view")}
+          />
         </div>
-        {busy && <p className="flex items-center gap-2 text-[11px] text-primary"><Download className="ducs-pulse size-3.5" /> Exporting with DuckDB…</p>}
+        {busy && (
+          <p className="flex items-center gap-2 text-[11px] text-primary"><Download className="ducs-pulse size-3.5" /> Exporting with DuckDB…</p>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ExportChoice({ busy, icon, title, detail, onSelect }: {
+  busy: boolean;
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={onSelect}
+      className="group flex items-start gap-3 rounded-xl border border-border bg-background/60 p-3 text-left outline-none transition-[border-color,background-color,transform,box-shadow] duration-200 ease-soft hover:-translate-y-px hover:border-primary/40 hover:bg-primary/[0.06] hover:shadow-[0_10px_26px_-16px_rgba(52,224,127,.8)] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 motion-reduce:hover:translate-y-0"
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary transition-colors duration-200 group-hover:bg-primary/20 [&>svg]:size-4">{icon}</span>
+      <span>
+        <span className="block text-[12.5px] font-medium text-foreground">{title}</span>
+        <span className="mt-0.5 block text-[10.5px] leading-4 text-muted-foreground">{detail}</span>
+      </span>
+    </button>
   );
 }
 

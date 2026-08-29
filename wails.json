@@ -13,7 +13,7 @@
   "info": {
     "companyName": "Duc's Table",
     "productName": "Duc's Table",
-    "productVersion": "0.1.0",
+    "productVersion": "0.1.1",
     "copyright": "Copyright 2026 Antonio Duarte and Duc's Table contributors",
     "comments": "Privacy-first local data analysis powered by DuckDB."
   }

@@ -108,7 +108,7 @@ Do not publish a bundle that is only ad-hoc signed. An ad-hoc signature is for l
 ## Tag and publish
 
 1. Merge the release preparation through the normal pull-request process and rerun required CI on the exact release commit.
-2. Create an annotated tag such as `v0.1.0` on that commit. Do not move or reuse a published tag.
+2. Create an annotated tag such as `v0.1.1` on that commit. Do not move or reuse a published tag.
 3. Push the tag and allow release CI to rebuild or verify the exact tagged source. Compare the produced commit, version, architecture, signature, and notarization result with the approved release record.
 4. Create the GitHub release from that tag. Mark pre-releases accurately.
 5. Attach only signed, notarized, verified artifacts. Generate and publish SHA-256 checksums for every downloadable artifact.

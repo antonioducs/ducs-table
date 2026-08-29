@@ -706,9 +706,9 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
           </Button>
           <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
             {viewState.filters.length > 0 ? (
-              <span>{viewState.filters.length} filter{viewState.filters.length === 1 ? "" : "s"}</span>
+              <span className="ducs-num rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 font-medium text-brand-300">{viewState.filters.length} filter{viewState.filters.length === 1 ? "" : "s"}</span>
             ) : null}
-            <span>{resolvedRowCount === null ? (external ? "Total unknown" : "Rows calculating…") : `${resolvedRowCount.toLocaleString()} rows`}</span>
+            <span className="ducs-num rounded-full border border-border bg-white/[0.03] px-2 py-0.5">{resolvedRowCount === null ? (external ? "Total unknown" : "Rows calculating…") : `${resolvedRowCount.toLocaleString()} rows`}</span>
           </div>
         </div>
       ) : null}
@@ -719,10 +719,10 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
         </div>
       ) : null}
       {ready && !zeroRows && rowsLoading && !restoringView && !loadError ? (
-        <div role="status" aria-live="polite" className="flex items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-[10px] text-muted-foreground">
+        <div role="status" aria-live="polite" className="ducs-trace flex items-center gap-2 border-b border-primary/20 bg-primary/[0.06] px-3 py-1.5 text-[10px] text-muted-foreground">
           <LoaderCircle className="size-3 animate-spin text-primary" />
           <span>{loadingLabel}</span>
-          {loadingElapsedSeconds > 0 ? <span className="ml-auto tabular-nums">{loadingElapsedSeconds}s elapsed</span> : null}
+          {loadingElapsedSeconds > 0 ? <span className="ducs-num ml-auto">{loadingElapsedSeconds}s elapsed</span> : null}
           {external && loadingFirstBlock && loadingElapsedSeconds >= 5 ? <span>Only this page is being fetched.</span> : null}
         </div>
       ) : null}

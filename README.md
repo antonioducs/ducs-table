@@ -22,7 +22,8 @@ loading complete datasets into React or modifying the original sources.
 
 > [!IMPORTANT]
 > The project is in early `0.x` development. It currently supports native macOS
-> source builds; no notarized public binary has been released yet.
+> builds and signed, notarized downloads for Apple silicon. Intel Macs do not yet
+> have a published binary.
 
 ## Why Duc's Table
 
@@ -79,10 +80,13 @@ Build a native development application:
 npm run build
 ```
 
-The app is written to `build/bin/ducs-table.app`. Local builds are ad hoc signed
+The app is written to `build/bin/Duc's Table.app`. Local builds are ad hoc signed
 unless `DUCS_CODESIGN_IDENTITY` is set; they are not equivalent to a notarized
 public release. See [Development](docs/development.md) and
 [Releasing](docs/releasing.md).
+
+Published releases include a signed and notarized DMG. Open it and drag
+`Duc's Table.app` onto the included `Applications` shortcut to install the app.
 
 ## Safety and privacy
 

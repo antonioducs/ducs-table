@@ -3,10 +3,9 @@ import { access, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { appBundle } from './app-paths.mjs'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const defaultBundle = path.join(root, 'build', 'bin', 'ducs-table.app', 'Contents', 'Resources', 'ai-sidecar')
+const defaultBundle = path.join(appBundle, 'Contents', 'Resources', 'ai-sidecar')
 const bundle = path.resolve(process.argv[2] || process.env.DUCS_AI_BUNDLE || defaultBundle)
 const node = path.join(bundle, 'node')
 const entrypoint = path.join(bundle, 'dist', 'index.js')

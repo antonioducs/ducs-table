@@ -130,7 +130,7 @@ Stop `wails dev` and close any app running from `build/bin` before building. The
 npm run build
 ```
 
-The result is `build/bin/ducs-table.app` for the current machine architecture; the initial build is not universal. DuckDB uses CGO, so a working Xcode toolchain is required.
+The result is `build/bin/Duc's Table.app` for the current machine architecture; the initial build is not universal. DuckDB uses CGO, so a working Xcode toolchain is required.
 
 The build compiles the sidecar, stages production dependencies and a copy of the current Node executable, runs Wails, copies the architecture-native sidecar under `Contents/Resources/ai-sidecar`, signs the completed bundle, and verifies it offline. Local builds use ad-hoc signing by default. Set `DUCS_CODESIGN_IDENTITY` for an intended distribution identity, or set `DUCS_SKIP_CODESIGN=1` only when a later packaging step will sign the completed bundle.
 

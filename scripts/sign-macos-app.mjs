@@ -2,13 +2,11 @@ import { constants } from 'node:fs'
 import { access, open, readdir, stat } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { appBundle as app, projectRoot } from './app-paths.mjs'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const app = path.resolve(root, process.env.DUCS_APP_BUNDLE || path.join('build', 'bin', 'ducs-table.app'))
 const sidecar = path.join(app, 'Contents', 'Resources', 'ai-sidecar')
 const node = path.join(sidecar, 'node')
-const runtimeEntitlements = path.join(root, 'build', 'darwin', 'entitlements-ai-runtime.plist')
+const runtimeEntitlements = path.join(projectRoot, 'build', 'darwin', 'entitlements-ai-runtime.plist')
 const identity = process.env.DUCS_CODESIGN_IDENTITY || '-'
 
 if (process.platform !== 'darwin' || process.env.DUCS_SKIP_CODESIGN === '1') {

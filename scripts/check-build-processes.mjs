@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { appBundleName } from './app-paths.mjs'
 
 if (process.platform !== 'win32') {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -10,7 +11,7 @@ if (process.platform !== 'win32') {
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((line) => line.includes(root))
-    .filter((line) => /\bwails dev\b/.test(line) || line.includes('build/bin/ducs-table.app/Contents/MacOS/DucsTable'))
+    .filter((line) => /\bwails dev\b/.test(line) || line.includes(`build/bin/${appBundleName}/Contents/MacOS/DucsTable`))
 
   if (blockers.length > 0) {
     console.error('Cannot build Duc\'s Table while the dev server or built app is running.')

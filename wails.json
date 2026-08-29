@@ -1,6 +1,6 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "ducs-table",
+  "name": "Duc's Table",
   "outputfilename": "DucsTable",
   "frontend:install": "npm ci",
   "frontend:build": "npm run build",

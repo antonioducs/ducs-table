@@ -1,11 +1,10 @@
 import { constants } from 'node:fs'
 import { access, cp, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { appBundle as defaultAppBundle, projectRoot } from './app-paths.mjs'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const stage = path.resolve(root, process.env.DUCS_AI_STAGE_DIR || path.join('node_modules', '.cache', 'ducs-table', 'ai-sidecar-stage'))
-const app = path.resolve(root, process.env.DUCS_APP_BUNDLE || path.join('build', 'bin', 'ducs-table.app'))
+const stage = path.resolve(projectRoot, process.env.DUCS_AI_STAGE_DIR || path.join('node_modules', '.cache', 'ducs-table', 'ai-sidecar-stage'))
+const app = defaultAppBundle
 const resources = path.join(app, 'Contents', 'Resources')
 const destination = path.join(resources, 'ai-sidecar')
 

@@ -46,7 +46,7 @@ jobs:
       - name: Build and verify development bundle
         run: npm run build
       - name: Verify ad hoc signature
-        run: codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app
+        run: codesign --verify --deep --strict --verbose=2 "build/bin/Duc's Table.app"
 
       # Development bundles are deliberately not uploaded. Public binaries must
       # come from release.yml after Developer ID signing and notarization.

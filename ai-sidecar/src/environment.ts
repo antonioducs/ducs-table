@@ -1,3 +1,5 @@
+import { APP_VERSION } from './version.js'
+
 const BASE_RUNTIME_ENV = [
   'PATH',
   'HOME',
@@ -60,6 +62,6 @@ export function claudeEnvironment(configDirectory: string, source?: NodeJS.Proce
     DISABLE_AUTOUPDATER: '1',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'false',
-    CLAUDE_AGENT_SDK_CLIENT_APP: 'ducs-table/0.1.0',
+    CLAUDE_AGENT_SDK_CLIENT_APP: `ducs-table/${APP_VERSION}`,
   }
 }

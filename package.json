@@ -1,6 +1,6 @@
 {
   "name": "ducs-table-workspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -26,6 +26,7 @@
     "ai:build": "npm run ai:compile && node scripts/stage-ai-sidecar.mjs",
     "ai:package": "node scripts/package-ai-sidecar.mjs",
     "app:sign": "node scripts/sign-macos-app.mjs",
+    "dmg:create": "node scripts/create-macos-dmg.mjs",
     "ai:test": "npm --prefix ai-sidecar run test",
     "ai:verify": "node scripts/verify-ai-sidecar.mjs",
     "typecheck": "npm --prefix frontend run typecheck",

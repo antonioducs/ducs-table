@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
 import { errorMessage, isRecord, type RpcId } from '../types.js'
+import { APP_VERSION } from '../version.js'
 
 export interface AppServerRequest {
   id: RpcId
@@ -65,7 +66,7 @@ export class CodexAppServer {
     })
     try {
       await server.rawRequest('initialize', {
-        clientInfo: { name: 'ducs-table', title: 'DUCS Table', version: '0.1.0' },
+        clientInfo: { name: 'ducs-table', title: "Duc's Table", version: APP_VERSION },
         capabilities: { experimentalApi: true },
       })
       server.write({ method: 'initialized', params: {} })

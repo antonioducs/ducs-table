@@ -48,7 +48,7 @@ separate app on each additional macOS architecture that a future release claims
 to support. The bundled Node executable and Codex/Claude native packages must
 match the artifact's architecture.
 
-Before each build, stop `wails dev` and close `build/bin/ducs-table.app`. Build the final app with an Apple distribution signing identity available to the process:
+Before each build, stop `wails dev` and close `build/bin/Duc's Table.app`. Build the final app with an Apple distribution signing identity available to the process:
 
 ```sh
 DUCS_CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" npm run build
@@ -78,6 +78,11 @@ The release workflow stops before building if any credential is absent and does
 not publish until signature verification, notarization, stapling, and Gatekeeper
 assessment all succeed.
 
+The primary download is a signed and notarized DMG containing `Duc's Table.app`
+and an `Applications` shortcut for drag-to-install. The release also publishes a
+ZIP of the same stapled app as a fallback. Both artifacts have separate SHA-256
+checksum files.
+
 The sidecar is copied before the build script signs the completed app bundle.
 Release signing processes embedded Mach-O executables from the inside out,
 removes development-only entitlements from the bundled Node runtime, enables
@@ -90,9 +95,12 @@ the final artifact on a clean supported Mac. At minimum, validate the completed
 app with:
 
 ```sh
-codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app
-spctl --assess --type execute --verbose=4 build/bin/ducs-table.app
-xcrun stapler validate build/bin/ducs-table.app
+codesign --verify --deep --strict --verbose=2 "build/bin/Duc's Table.app"
+spctl --assess --type execute --verbose=4 "build/bin/Duc's Table.app"
+xcrun stapler validate "build/bin/Duc's Table.app"
+codesign --verify --verbose=2 DucsTable-<version>-macOS-ARM64.dmg
+spctl --assess --type open --context context:primary-signature --verbose=4 DucsTable-<version>-macOS-ARM64.dmg
+xcrun stapler validate DucsTable-<version>-macOS-ARM64.dmg
 ```
 
 Do not publish a bundle that is only ad-hoc signed. An ad-hoc signature is for local development, not release distribution. Likewise, a successful CI compile is not a releasable artifact unless signing, notarization, architecture, bundled notices, and clean-machine launch checks all pass.
@@ -100,7 +108,7 @@ Do not publish a bundle that is only ad-hoc signed. An ad-hoc signature is for l
 ## Tag and publish
 
 1. Merge the release preparation through the normal pull-request process and rerun required CI on the exact release commit.
-2. Create an annotated tag such as `v0.1.0` on that commit. Do not move or reuse a published tag.
+2. Create an annotated tag such as `v0.1.1` on that commit. Do not move or reuse a published tag.
 3. Push the tag and allow release CI to rebuild or verify the exact tagged source. Compare the produced commit, version, architecture, signature, and notarization result with the approved release record.
 4. Create the GitHub release from that tag. Mark pre-releases accurately.
 5. Attach only signed, notarized, verified artifacts. Generate and publish SHA-256 checksums for every downloadable artifact.

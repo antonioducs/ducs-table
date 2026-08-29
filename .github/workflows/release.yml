@@ -114,28 +114,54 @@ jobs:
         run: npm run build
       - name: Verify Developer ID signature
         run: |
-          codesign --verify --deep --strict --verbose=2 build/bin/ducs-table.app
-          codesign -dv --verbose=4 build/bin/ducs-table.app
-      - name: Notarize and staple
+          test "$(plutil -extract CFBundleName raw "build/bin/Duc's Table.app/Contents/Info.plist")" = "Duc's Table"
+          test "$(plutil -extract CFBundleIdentifier raw "build/bin/Duc's Table.app/Contents/Info.plist")" = "com.wails.ducs-table"
+          test "$(plutil -extract CFBundleShortVersionString raw "build/bin/Duc's Table.app/Contents/Info.plist")" = "${GITHUB_REF_NAME#v}"
+          codesign --verify --deep --strict --verbose=2 "build/bin/Duc's Table.app"
+          codesign -dv --verbose=4 "build/bin/Duc's Table.app"
+      - name: Notarize and staple app
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          ditto -c -k --keepParent build/bin/ducs-table.app "$RUNNER_TEMP/notarization.zip"
+          ditto -c -k --keepParent "build/bin/Duc's Table.app" "$RUNNER_TEMP/notarization.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarization.zip" \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
             --wait
-          xcrun stapler staple build/bin/ducs-table.app
-          xcrun stapler validate build/bin/ducs-table.app
-          spctl --assess --type execute --verbose=4 build/bin/ducs-table.app
+          xcrun stapler staple "build/bin/Duc's Table.app"
+          xcrun stapler validate "build/bin/Duc's Table.app"
+          spctl --assess --type execute --verbose=4 "build/bin/Duc's Table.app"
+      - name: Create and sign drag-to-Applications DMG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dmg="DucsTable-${version}-macOS-${RUNNER_ARCH}.dmg"
+          npm run dmg:create -- "$dmg"
+          codesign --force --sign "$DUCS_CODESIGN_IDENTITY" --timestamp "$dmg"
+          codesign --verify --verbose=2 "$dmg"
+          echo "RELEASE_DMG=$dmg" >> "$GITHUB_ENV"
+      - name: Notarize and staple DMG
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          xcrun notarytool submit "$RELEASE_DMG" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "$RELEASE_DMG"
+          xcrun stapler validate "$RELEASE_DMG"
+          codesign --verify --verbose=2 "$RELEASE_DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$RELEASE_DMG"
       - name: Package release assets
         run: |
           version="${GITHUB_REF_NAME#v}"
           archive="DucsTable-${version}-macOS-${RUNNER_ARCH}.zip"
-          ditto -c -k --keepParent build/bin/ducs-table.app "$archive"
+          ditto -c -k --keepParent "build/bin/Duc's Table.app" "$archive"
           shasum -a 256 "$archive" > "$archive.sha256"
+          shasum -a 256 "$RELEASE_DMG" > "$RELEASE_DMG.sha256"
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
       - name: Publish GitHub Release
         env:
@@ -148,6 +174,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "$RELEASE_ARCHIVE" \
             "$RELEASE_ARCHIVE.sha256" \
+            "$RELEASE_DMG" \
+            "$RELEASE_DMG.sha256" \
             --verify-tag \
             --generate-notes \
             --title "Duc's Table $GITHUB_REF_NAME" \

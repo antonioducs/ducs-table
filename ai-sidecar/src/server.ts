@@ -6,6 +6,7 @@ import { CodexProvider } from './codex/provider.js'
 import { JsonlPeer } from './jsonl-peer.js'
 import type { AiProvider, ChatStartParams, ProviderContext, ProviderName, RpcRequest } from './types.js'
 import { isRecord } from './types.js'
+import { APP_VERSION } from './version.js'
 
 function providerName(value: unknown): ProviderName {
   if (value === 'codex' || value === 'claude') return value
@@ -54,7 +55,7 @@ export class SidecarServer {
 
   private async handle(request: RpcRequest): Promise<unknown> {
     if (this.disposed) throw new Error('Sidecar is shutting down.')
-    if (request.method === 'ping') return { ok: true, version: '0.1.0' }
+    if (request.method === 'ping') return { ok: true, version: APP_VERSION }
     if (request.method === 'status') {
       const params = isRecord(request.params) ? request.params : {}
       if (params.provider === undefined) return Promise.all(Object.values(this.providers).map((provider) => provider.status(params.refresh === true)))

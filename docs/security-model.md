@@ -57,7 +57,15 @@ DuckDB's automatic extension install and load settings are disabled for every ap
 - `postgres` from DuckDB's core repository; and
 - experimental `mongo` from the fixed DuckDB community repository after user consent.
 
-The frontend cannot choose an extension or repository. First use may download a signed extension into the app's private cache; a cached compatible extension can then work offline. Native extension code and packaged Node/provider binaries remain supply-chain-sensitive and must be pinned, attributed, and reviewed during releases.
+The frontend cannot choose an extension or repository. First use may download a
+DuckDB-signed extension into the app's private cache; a cached compatible
+extension can then work offline. Release builds disable Apple's library
+validation for the app host because downloaded DuckDB extensions do not carry
+the app publisher's Apple Team ID. Hardened runtime remains enabled, and DuckDB's
+extension signature checks, fixed allowlist, fixed repositories, and disabled
+autoload/autoinstall settings remain the executable-code controls. Native
+extension code and packaged Node/provider binaries remain supply-chain-sensitive
+and must be pinned, attributed, and reviewed during releases.
 
 Expected network egress is limited to user-configured database connections or explicit auto-connect, allowlisted extension downloads on first use, and optional AI provider authentication/model/conversation traffic. There is no app account, analytics, telemetry, cloud backend, or automatic file upload.
 

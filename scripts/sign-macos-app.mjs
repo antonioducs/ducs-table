@@ -6,6 +6,7 @@ import { appBundle as app, projectRoot } from './app-paths.mjs'
 
 const sidecar = path.join(app, 'Contents', 'Resources', 'ai-sidecar')
 const node = path.join(sidecar, 'node')
+const appEntitlements = path.join(projectRoot, 'build', 'darwin', 'entitlements-app.plist')
 const runtimeEntitlements = path.join(projectRoot, 'build', 'darwin', 'entitlements-ai-runtime.plist')
 const identity = process.env.DUCS_CODESIGN_IDENTITY || '-'
 
@@ -16,9 +17,11 @@ if (process.platform !== 'darwin' || process.env.DUCS_SKIP_CODESIGN === '1') {
 
 await requirePath(app, 'Build the Wails app before signing it.')
 await requirePath(sidecar, 'Package the AI sidecar before signing the app.')
+await requirePath(appEntitlements, 'The app entitlements are required for DuckDB extensions.')
 
 if (identity === '-') {
-  runCodesign(['--force', '--deep', '--sign', '-', app])
+  runCodesign(['--force', '--deep', '--sign', '-', '--entitlements', appEntitlements, app])
+  verifyLibraryValidationEntitlement(app)
   console.log(`Development bundle signed ad hoc at ${app}`)
   process.exit(0)
 }
@@ -51,10 +54,10 @@ for (const binary of nestedBinaries) {
   sign(binary)
 }
 
-sign(app)
+sign(app, appEntitlements)
 
 for (const binary of nestedBinaries) verifyDistributionSignature(binary)
-verifyDistributionSignature(app, true)
+verifyDistributionSignature(app, { deep: true, requireLibraryValidationDisabled: true })
 
 console.log(`Developer ID bundle signed inside-out at ${app}`)
 
@@ -126,6 +129,7 @@ function inspectSignature(candidate) {
   const detailText = `${details.stdout || ''}\n${details.stderr || ''}`
   const entitlementText = `${entitlements.stdout || ''}\n${entitlements.stderr || ''}`
   const forbiddenDebugEntitlement = /<key>com\.apple\.security\.get-task-allow<\/key>\s*<true\s*\/>/.test(entitlementText)
+  const libraryValidationDisabled = /<key>com\.apple\.security\.cs\.disable-library-validation<\/key>\s*<true\s*\/>/.test(entitlementText)
 
   const signature = {
     valid: verification.status === 0,
@@ -133,6 +137,7 @@ function inspectSignature(candidate) {
     hardenedRuntime: /flags=.*\bruntime\b/m.test(detailText),
     secureTimestamp: /^Timestamp=/m.test(detailText),
     forbiddenDebugEntitlement,
+    libraryValidationDisabled,
   }
   return {
     ...signature,
@@ -145,7 +150,7 @@ function inspectSignature(candidate) {
   }
 }
 
-function verifyDistributionSignature(candidate, deep = false) {
+function verifyDistributionSignature(candidate, { deep = false, requireLibraryValidationDisabled = false } = {}) {
   const args = ['--verify']
   if (deep) args.push('--deep')
   args.push('--strict', '--verbose=2', candidate)
@@ -153,6 +158,12 @@ function verifyDistributionSignature(candidate, deep = false) {
 
   const signature = inspectSignature(candidate)
   if (!signature.distributable) throw new Error(`${candidate} is not distribution-ready: ${distributionFailure(signature)}.`)
+  if (requireLibraryValidationDisabled) verifyLibraryValidationEntitlement(candidate, signature)
+}
+
+function verifyLibraryValidationEntitlement(candidate, inspectedSignature) {
+  const signature = inspectedSignature || inspectSignature(candidate)
+  if (!signature.libraryValidationDisabled) throw new Error(`${candidate} is missing the DuckDB library-validation entitlement.`)
 }
 
 function distributionFailure(signature) {

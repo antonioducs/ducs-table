@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Allowed signed and notarized macOS builds to load allowlisted DuckDB
+  extensions from the private cache while retaining hardened runtime and the
+  existing DuckDB extension provenance controls.
+
 ## [0.1.1] - 2026-08-29
 
 ### Added

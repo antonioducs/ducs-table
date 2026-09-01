@@ -119,6 +119,7 @@ jobs:
           test "$(plutil -extract CFBundleShortVersionString raw "build/bin/Duc's Table.app/Contents/Info.plist")" = "${GITHUB_REF_NAME#v}"
           codesign --verify --deep --strict --verbose=2 "build/bin/Duc's Table.app"
           codesign -dv --verbose=4 "build/bin/Duc's Table.app"
+          test "$(codesign -d --entitlements :- --xml "build/bin/Duc's Table.app" 2>/dev/null | plutil -extract 'com\.apple\.security\.cs\.disable-library-validation' raw -)" = "true"
       - name: Notarize and staple app
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}

@@ -86,7 +86,10 @@ checksum files.
 The sidecar is copied before the build script signs the completed app bundle.
 Release signing processes embedded Mach-O executables from the inside out,
 removes development-only entitlements from the bundled Node runtime, enables
-hardened runtime, requests secure timestamps, and signs the outer app last.
+hardened runtime, requests secure timestamps, and signs the outer app last. The
+outer app receives the library-validation exception required to load
+DuckDB-signed extensions downloaded into its private cache; the signing script
+and release workflow both fail if that entitlement is absent.
 Valid Developer ID signatures and required entitlements supplied by the Codex
 and Claude vendors are preserved. After signing, submit the exact distributable
 to Apple's notarization service with the App Store Connect API key, wait for

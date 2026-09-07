@@ -254,7 +254,7 @@ describe("DataGrid", () => {
       hasMore: false,
       pagingStable: true,
     });
-    const request = (successCallback: ReturnType<typeof vi.fn>): IGetRowsParams => ({
+    const request = (successCallback: IGetRowsParams["successCallback"]): IGetRowsParams => ({
       startRow: 0,
       endRow: 250,
       sortModel: [],

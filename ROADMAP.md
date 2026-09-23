@@ -34,7 +34,7 @@ Candidate priorities after the initial `0.x` release:
 
 - Project portability and lifecycle features such as explicit import/export, duplicate, move/copy, and carefully designed deletion.
 - Better visibility and controls for large remote joins, long-running work, snapshots, and disk use.
-- A signed and notarized distribution pipeline, checksums, stronger release metadata, and groundwork for a safe update experience.
+- Stronger release metadata, such as a verified SBOM, and update improvements such as smaller delta downloads and Intel packages.
 - Broader local format ergonomics, including evaluating a first-class Parquet UI, while retaining immutable-source behavior.
 - Accessibility, keyboard workflow, and grid/editor polish based on real usage.
 

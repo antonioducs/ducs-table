@@ -87,6 +87,9 @@ public release. See [Development](docs/development.md) and
 
 Published releases include a signed and notarized DMG. Open it and drag
 `Duc's Table.app` onto the included `Applications` shortcut to install the app.
+Installed releases then check GitHub for new versions; the version menu in the
+status bar downloads the update, verifies its checksum, Developer ID signature,
+and notarization, and restarts into the new version.
 
 ## Safety and privacy
 
@@ -101,9 +104,10 @@ Passwords and credential-bearing URIs do not enter the workspace, frontend
 state, events, or application logs.
 
 Duc's Table has no app account, cloud backend, analytics, telemetry, or automatic
-file upload. Network access occurs only for user-configured database connections,
-first-use downloads of allowlisted DuckDB extensions, and optional AI provider
-operations after consent.
+file upload. Network access occurs only for update checks against GitHub Releases
+(automatic by default and can be turned off), user-configured database
+connections, first-use downloads of allowlisted DuckDB extensions, and optional
+AI provider operations after consent.
 
 Read the [privacy policy](PRIVACY.md), [security model](docs/security-model.md),
 and [security reporting policy](SECURITY.md) before using sensitive data or

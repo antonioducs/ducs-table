@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- In-app updates from GitHub Releases. Release builds check for a newer
+  version shortly after launch and every 6 hours (can be turned off from the
+  version menu in the status bar), download on request, verify the SHA-256
+  checksum, Developer ID team, bundle identifier, and notarization, then replace
+  the app and relaunch. Apps that cannot replace themselves reveal the verified
+  update in Finder; unsigned builds link to the release page.
+
+### Changed
+
+- The privacy policy, README, and security model now list update checks
+  against `api.github.com` as expected network egress.
+
 ## [0.1.2] - 2026-09-01
 
 ### Fixed

@@ -136,6 +136,16 @@ The build compiles the sidecar, stages production dependencies and a copy of the
 
 Release artifacts have additional signing and notarization requirements; see [releasing.md](releasing.md).
 
+## In-app updates
+
+Development builds (`npm run dev`) never contact GitHub for updates. Locally built production apps are ad hoc signed, so they check GitHub but only link to the release page; downloading and installing requires a Developer ID build. To work on the update UI, start development mode with a simulated state (`available`, `downloading`, `ready`, `manual`, `notify`, or `error`):
+
+```sh
+DUCS_UPDATE_FIXTURE=ready npm run dev
+```
+
+Simulated actions never download or replace anything. The update state machine is tested in `internal/update` against a local HTTP server and fake signing tools.
+
 ## Troubleshooting
 
 - **`wails` not found:** confirm `$(go env GOPATH)/bin` is on `PATH` and rerun `wails version`.

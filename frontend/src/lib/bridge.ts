@@ -48,6 +48,9 @@ import type {
   AISendRequest,
   AIStopRequest,
   AIStreamEvent,
+  UpdateMode,
+  UpdatePhase,
+  UpdateState,
 } from "@/types";
 import { installWailsErrorNormalizer } from "@/lib/wails-error-normalizer";
 import { createSession, normalizeSession, SESSION_VERSION } from "@/lib/workbench";
@@ -491,8 +494,43 @@ function normalizeImportResult(value: unknown, projectId: string): ImportPathsRe
   };
 }
 
+const updatePhases: readonly UpdatePhase[] = ["idle", "checking", "available", "downloading", "verifying", "ready", "installing"];
+const updateModes: readonly UpdateMode[] = ["off", "installer", "manual", "notify"];
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function normalizeUpdateState(value: unknown): UpdateState {
+  const raw = object(value);
+  const phase = updatePhases.find((candidate) => candidate === raw.phase) ?? "idle";
+  const mode = updateModes.find((candidate) => candidate === raw.mode) ?? "off";
+  return {
+    revision: optionalNumber(raw.revision) ?? 0,
+    phase,
+    mode,
+    modeReason: optionalString(raw.modeReason),
+    currentVersion: string(raw.currentVersion),
+    availableVersion: optionalString(raw.availableVersion),
+    releaseUrl: optionalString(raw.releaseUrl),
+    publishedAt: optionalString(raw.publishedAt),
+    downloadedBytes: optionalNumber(raw.downloadedBytes),
+    totalBytes: optionalNumber(raw.totalBytes),
+    progress: optionalNumber(raw.progress),
+    lastCheckedAt: optionalString(raw.lastCheckedAt),
+    autoCheck: raw.autoCheck !== false,
+    skippedVersion: optionalString(raw.skippedVersion),
+    error: optionalString(raw.error),
+  };
+}
+
 function normalizeEvent<K extends keyof BridgeEventMap>(eventName: K, value: unknown): BridgeEventMap[K] {
   const raw = object(value);
+  if (eventName === "ducs:update-status") return normalizeUpdateState(value) as BridgeEventMap[K];
   if (eventName === "ducs:ai-stream") return normalizeAIStream(value) as BridgeEventMap[K];
   if (eventName === "ducs:ai-runtime") return normalizeAIRun(value) as BridgeEventMap[K];
   if (eventName === "ducs:ai-approval-request") return normalizeAIApproval(value) as BridgeEventMap[K];
@@ -691,6 +729,15 @@ export const bridge = {
   async AISend(request: AISendRequest): Promise<AIRun> { return normalizeAIRun(await app().AISend(request)); },
   async AIStop(request: AIStopRequest): Promise<AIRun> { return normalizeAIRun(await app().AIStop(request)); },
   AIRespondApproval(request: AIApprovalResponse): Promise<void> { return app().AIRespondApproval(request); },
+
+  async UpdateGetState(): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateGetState()); },
+  async UpdateCheck(): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateCheck()); },
+  async UpdateDownload(): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateDownload()); },
+  async UpdateInstall(): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateInstall()); },
+  async UpdateSkip(): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateSkip()); },
+  async UpdateSetAutoCheck(enabled: boolean): Promise<UpdateState> { return normalizeUpdateState(await app().UpdateSetAutoCheck(enabled)); },
+  UpdateOpenRelease(): Promise<void> { return app().UpdateOpenRelease(); },
+  UpdateReveal(): Promise<void> { return app().UpdateReveal(); },
 
   on<K extends keyof BridgeEventMap>(eventName: K, callback: (payload: BridgeEventMap[K]) => void): () => void {
     const runtime = window.runtime;

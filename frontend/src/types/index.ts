@@ -566,6 +566,29 @@ export interface AIProviderUpdatedEvent extends Partial<AIProviderStatus> {
   result?: unknown;
 }
 
+export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "verifying" | "ready" | "installing";
+/** off: development build · installer: replaces the app and relaunches · manual: verified download revealed in Finder · notify: release page only. */
+export type UpdateMode = "off" | "installer" | "manual" | "notify";
+
+export interface UpdateState {
+  /** Monotonic; a lower revision is stale. */
+  revision: number;
+  phase: UpdatePhase;
+  mode: UpdateMode;
+  modeReason?: string;
+  currentVersion: string;
+  availableVersion?: string;
+  releaseUrl?: string;
+  publishedAt?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  progress?: number;
+  lastCheckedAt?: string;
+  autoCheck: boolean;
+  skippedVersion?: string;
+  error?: string;
+}
+
 export type BridgeEventMap = {
   "ducs:job-updated": Job;
   "ducs:dataset-preview": ProjectPreviewEvent;
@@ -581,4 +604,5 @@ export type BridgeEventMap = {
   "ducs:ai-runtime": AIRun;
   "ducs:ai-provider-updated": AIProviderUpdatedEvent;
   "ducs:ai-approval-request": AIApprovalRequest;
+  "ducs:update-status": UpdateState;
 };

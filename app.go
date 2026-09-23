@@ -22,6 +22,7 @@ import (
 	"ducs-table/internal/jobs"
 	"ducs-table/internal/models"
 	"ducs-table/internal/query"
+	"ducs-table/internal/update"
 	"ducs-table/internal/workspace"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -43,6 +44,7 @@ type App struct {
 	federated   *federation.Session
 	connections *connections.Service
 	ai          *ai.Service
+	updates     *update.Service
 	logger      *applog.Logger
 	startupErr  error
 	closeOnce   sync.Once
@@ -65,7 +67,10 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.logger = appLogger
 	slog.SetDefault(appLogger.Slog())
-	a.logger.Info("application_started", "log_path", paths.LogPath)
+	a.logger.Info("application_started", "log_path", paths.LogPath, "version", appVersion())
+	// Updates start before the workspace opens so a release that fixes a
+	// workspace startup failure can still be installed.
+	a.startUpdates(paths)
 	db, err := database.Open(a.ctx, paths)
 	if err != nil {
 		a.logger.Error("workspace_open_failed", err, []string{paths.DBPath}, "database", filepath.Base(paths.DBPath))

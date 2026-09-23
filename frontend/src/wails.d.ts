@@ -103,6 +103,15 @@ declare global {
           AISend(request: AISendRequest): Promise<AIRun>;
           AIStop(request: AIStopRequest): Promise<AIRun>;
           AIRespondApproval(request: AIApprovalResponse): Promise<void>;
+
+          UpdateGetState(): Promise<unknown>;
+          UpdateCheck(): Promise<unknown>;
+          UpdateDownload(): Promise<unknown>;
+          UpdateInstall(): Promise<unknown>;
+          UpdateSkip(): Promise<unknown>;
+          UpdateSetAutoCheck(enabled: boolean): Promise<unknown>;
+          UpdateOpenRelease(): Promise<void>;
+          UpdateReveal(): Promise<void>;
         };
       };
     };

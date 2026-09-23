@@ -61,6 +61,7 @@ import { ConnectionManagerDialog } from "@/components/connections/ConnectionMana
 import { ProjectManagerDialog } from "@/components/projects/ProjectManagerDialog";
 import { AIChatPanel } from "@/components/ai/AIChatPanel";
 import { useAIStore } from "@/stores/ai-store";
+import { useUpdateStore } from "@/stores/update-store";
 
 type PendingDelete = { kind: "dataset" | "result" | "query"; projectId: string; id: string; name: string };
 type PendingDetach = { projectId: string; connection: ConnectionInfo };
@@ -813,6 +814,8 @@ export default function App() {
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [importPaths, notifyImportFailure]);
+
+  useEffect(() => useUpdateStore.getState().initialize(), []);
 
   useEffect(() => {
     const enter = (event: DragEvent) => {

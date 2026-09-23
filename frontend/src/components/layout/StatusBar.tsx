@@ -1,6 +1,7 @@
 import { Columns3, Database, HardDrive, LoaderCircle, Rows3, ShieldCheck } from "lucide-react";
 import type { Job, SourceInfo } from "@/types";
 import { formatCount } from "@/lib/utils";
+import { UpdateIndicator } from "@/components/layout/UpdateIndicator";
 
 export interface StatusBarProps {
   source?: SourceInfo;
@@ -45,6 +46,7 @@ export function StatusBar({ source, activeJobs, jobs = [] }: StatusBarProps) {
         </>
       )}
       <span className="ml-auto flex items-center gap-3">
+        <UpdateIndicator activeJobs={activeCount} />
         <span className="flex items-center gap-1.5"><HardDrive className="size-3 opacity-70" aria-hidden="true" /> On this Mac</span>
         <Divider />
         <span className="flex items-center gap-1.5 text-foreground/70"><Database className="size-3 text-primary/80" aria-hidden="true" /> DuckDB local</span>

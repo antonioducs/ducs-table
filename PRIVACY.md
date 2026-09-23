@@ -10,15 +10,24 @@ The private local `app.log` records bounded structured diagnostics such as opera
 
 Connections are global and may be linked to multiple projects without duplicating their configuration or Keychain item. Removing a link does not delete or disconnect the connection. Deleting a connection everywhere removes its metadata, credential, and project links but preserves local snapshots.
 
-The app performs network access only when the user:
+The app performs network access only:
 
-- connects or explicitly enables auto-connect for a PostgreSQL or MongoDB database; or
-- first uses an allowlisted DuckDB extension that must be downloaded into the app's private cache; or
-- chooses an AI provider and performs authentication, model discovery, or an AI conversation.
+- to check GitHub Releases for a newer version of Duc's Table and, when the user chooses, download it (see [Update checks](#update-checks)); or
+- when the user connects or explicitly enables auto-connect for a PostgreSQL or MongoDB database; or
+- when the user first uses an allowlisted DuckDB extension that must be downloaded into the app's private cache; or
+- when the user chooses an AI provider and performs authentication, model discovery, or an AI conversation.
 
 PostgreSQL is attached read-only. MongoDB uses an experimental read-only community extension. SQL entered by the user is limited to a single `SELECT`/`WITH` query, and provider functions that accept arbitrary connection strings or remote SQL are blocked.
 
 Connection errors and events are sanitized: they do not contain passwords, full credential-bearing URIs, DuckDB secret names, or internal attach SQL.
+
+## Update checks
+
+Installed release builds check for updates automatically: about 10 seconds after launch and every 6 hours while the app is open, Duc's Table asks `api.github.com` for the latest published release of `antonioducs/ducs-table`. The request carries only what any HTTPS request to GitHub carries — the device's IP address, standard headers, and a `User-Agent` naming the installed Duc's Table version. No workspace data, file names, project or connection details, device identifiers, or usage information are sent, and Duc's Table operates no update server of its own. GitHub processes the request under the [GitHub Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
+
+To stop scheduled checks, open the version menu at the right of the status bar and turn off **Check automatically**. **Check for updates** then contacts GitHub only when chosen. The preference and any skipped version are stored in `update-preferences.json` in the app's Application Support folder. Development builds never check.
+
+An update is downloaded only after the user chooses to download it. The package comes from the release's GitHub asset storage and is kept in the private `updates` folder beside the workspace until it is installed, skipped, or superseded. Installing replaces the app bundle only; the workspace, Keychain items, logs, and preferences are left untouched.
 
 ## Optional AI egress and consent
 

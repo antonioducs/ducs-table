@@ -32,6 +32,7 @@ Duc's Table is a single-user desktop workspace. It is not a multi-tenant databas
 | Extension manager to repositories | Extension name and downloaded native code | Autoload/autoinstall disabled, hardcoded allowlist and repository selection, DuckDB signed-extension mechanism |
 | Go host to Node sidecar | Provider commands, project context, tool requests and results | JSONL protocol, lazy process, allowlisted environment, host-authoritative tools and redaction |
 | Sidecar to AI provider | Prompt, model context, metadata and approved previews | Provider consent, separate preview approval, strict limits, disabled provider-native tools |
+| GitHub Releases to updater | Release metadata and the downloaded app package | Newer stable versions only, HTTPS, published SHA-256, same Developer ID team and bundle identifier, Gatekeeper assessment, renames with rollback |
 
 ## SQL restrictions
 
@@ -67,7 +68,29 @@ autoload/autoinstall settings remain the executable-code controls. Native
 extension code and packaged Node/provider binaries remain supply-chain-sensitive
 and must be pinned, attributed, and reviewed during releases.
 
-Expected network egress is limited to user-configured database connections or explicit auto-connect, allowlisted extension downloads on first use, and optional AI provider authentication/model/conversation traffic. There is no app account, analytics, telemetry, cloud backend, or automatic file upload.
+Expected network egress is limited to update checks against GitHub Releases (see [Updates](#updates)), user-configured database connections or explicit auto-connect, allowlisted extension downloads on first use, and optional AI provider authentication/model/conversation traffic. There is no app account, analytics, telemetry, cloud backend, or automatic file upload.
+
+## Updates
+
+`internal/update` runs only in Wails production builds. It asks `https://api.github.com/repos/antonioducs/ducs-table/releases/latest` for the newest release shortly after launch and every 6 hours unless the user turns automatic checks off; the request carries no workspace data. Drafts, prereleases, SemVer prerelease tags, and versions that are not strictly newer are ignored, so a release feed cannot downgrade the app.
+
+Downloading requires a user action. The package must be the release's `DucsTable-<version>-macOS-<ARCH>.zip` asset, fetched over HTTPS from `github.com` (redirects must stay on HTTPS) with a size limit and a stall timeout. Before anything is offered for installation:
+
+1. the SHA-256 GitHub reports for the asset (or the published `.sha256` file) must match the download. This detects corruption and truncation only, because the checksum comes from the same release;
+2. `ditto` extracts the archive, which must contain exactly one real `.app` directory;
+3. `CFBundleIdentifier` must equal the running app's and `CFBundleShortVersionString` must equal the release version;
+4. `codesign --verify --deep --strict` must accept the designated requirement `anchor apple generic`, Developer ID Application certificate markers, the running app's bundle identifier, and its Team ID (`certificate leaf[subject.OU]`). This check is the authenticity control: someone who can publish a GitHub release still cannot ship an update without the Developer ID private key; and
+5. `spctl --assess --type execute` must accept the bundle as notarized.
+
+Installing re-verifies the staged bundle beside the running one and then swaps them with two renames in the same directory, rolling back if the second rename fails. A helper shell waits for the old process to exit and opens the new bundle. The previous bundle is deleted only when the new version starts. Paths are passed to the helper as arguments, never interpolated into the script.
+
+The updater degrades instead of weakening checks:
+
+- builds without a Developer ID Team ID (ad hoc or unsigned) and releases without a package for this architecture only link to the release page;
+- if the bundle is translocated by Gatekeeper or its folder is not writable, the verified update is revealed in Finder for a manual drag-to-Applications replacement; and
+- network, checksum, signature, or Gatekeeper failures leave the current app running and report the error in the status bar.
+
+Downloaded files carry no quarantine attribute, so Gatekeeper does not prompt on the first launch of an installed update; step 5 performs the equivalent assessment first. A compromised Developer ID certificate or notarization account would defeat these checks; certificate revocation and the rollback guidance in [releasing.md](releasing.md) cover that case.
 
 ## Optional AI
 

@@ -37,7 +37,8 @@ Reports are especially useful when they involve:
 - plaintext credential persistence, Keychain isolation or fail-closed behavior, or passwords reaching the frontend;
 - leakage through connection URIs, errors, events, bootstrap payloads, logs, exports, or diagnostic redaction;
 - AI consent or approval bypasses, unbounded previews, cross-project tool access, unexpected provider egress, or re-enabled provider-native tools;
-- arbitrary or unsigned DuckDB extension loading, repository substitution, or broken extension provenance controls; and
+- arbitrary or unsigned DuckDB extension loading, repository substitution, or broken extension provenance controls;
+- in-app updates that install a package not signed with the app's Developer ID team, skip checksum or Gatekeeper verification, downgrade the app, or damage the installed bundle; and
 - remote writes despite the application's read-only connection and query guarantees.
 
 The [security model](docs/security-model.md) describes assumptions, trust boundaries, and known limitations. The [privacy policy](PRIVACY.md) describes intended data handling.

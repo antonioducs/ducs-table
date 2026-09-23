@@ -108,6 +108,34 @@ xcrun stapler validate DucsTable-<version>-macOS-ARM64.dmg
 
 Do not publish a bundle that is only ad-hoc signed. An ad-hoc signature is for local development, not release distribution. Likewise, a successful CI compile is not a releasable artifact unless signing, notarization, architecture, bundled notices, and clean-machine launch checks all pass.
 
+## In-app updates
+
+Installed releases discover new versions through GitHub's `releases/latest`
+endpoint, so the most recent non-draft, non-prerelease release becomes the
+update offered to every installation with an older version. No update feed file
+is published; the existing release assets are the contract:
+
+- the ZIP must be named `DucsTable-<version>-macOS-<RUNNER_ARCH>.zip` (for
+  example `DucsTable-0.2.0-macOS-ARM64.zip`) and contain exactly one stapled
+  `Duc's Table.app`, as `ditto -c -k --keepParent` produces;
+- `CFBundleShortVersionString` must equal the tag without `v`, which the release
+  workflow already enforces;
+- `CFBundleIdentifier` (`com.wails.ducs-table`) and the Developer ID Team ID must
+  stay the same as in earlier releases. Changing either makes every existing
+  installation reject the update, so users would have to install the new version
+  manually from the DMG; and
+- the `.sha256` file (or GitHub's asset digest) must describe the ZIP.
+
+Prerelease tags such as `v0.3.0-rc.1` are never offered. A release without a ZIP
+for a given architecture only produces a link to the release page on those Macs.
+
+To review the update UI without publishing, run the development app with a
+simulated state:
+
+```sh
+DUCS_UPDATE_FIXTURE=available npm run dev   # also: downloading, ready, manual, notify, error
+```
+
 ## Tag and publish
 
 1. Merge the release preparation through the normal pull-request process and rerun required CI on the exact release commit.
@@ -131,6 +159,7 @@ A security release follows the same build, signing, notarization, checksum, and 
 Do not silently replace an artifact or retarget a tag. If a release is defective:
 
 - mark the GitHub release and notes prominently with the impact and mitigation;
+- stop in-app updates from offering it by converting the release to a pre-release (or draft), so `releases/latest` falls back to the previous stable release. Installations that already updated are never downgraded automatically;
 - remove a dangerous downloadable asset when necessary while preserving an audit trail;
 - publish a new patch version from a reviewed fix, with new tags, checksums, signing, and notarization;
 - document workspace compatibility and whether users can safely return to an earlier build; and

@@ -37,6 +37,7 @@ The backend is split by responsibility:
 | `internal/extensions` | Fixed allowlist and installation/loading policy for `excel`, `postgres`, and experimental `mongo` |
 | `internal/credentials` | macOS Keychain persistence and fail-closed credential access |
 | `internal/ai` | Consent state, conversation repository, redaction, bounded tools, approvals, and sidecar supervision |
+| `internal/update` | GitHub Releases discovery, verified download, in-place bundle replacement, and relaunch |
 | `internal/apppaths`, `internal/applog` | Private application paths and bounded structured diagnostics |
 
 ### React frontend

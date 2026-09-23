@@ -377,7 +377,9 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
     };
   }), [columns, ready]);
 
-  const datasource = useMemo<IDatasource | undefined>(() => {
+  // AG Grid destroys its datasource on unmount (including Hide all).
+  // Each new grid needs its own request lifecycle.
+  const createDatasource = useCallback((): IDatasource | undefined => {
     if (!ready) return undefined;
     let active = true;
     let pendingRequests = 0;
@@ -468,12 +470,13 @@ function DataGridInner({ source, projectId = source.projectId, resource = { kind
     try {
       event.api.setGridAriaProperty("label", `${source.displayName} data grid`);
       event.api.applyColumnState({ state: columnStateRef.current, applyOrder: true });
-      if (ready && datasource) event.api.setGridOption("datasource", datasource);
+      const datasource = createDatasource();
+      if (datasource) event.api.setGridOption("datasource", datasource);
       synchronizeFromApi(event.api);
     } catch {
       apiRef.current = null;
     }
-  }, [datasource, ready, source.displayName, synchronizeFromApi]);
+  }, [createDatasource, source.displayName, synchronizeFromApi]);
 
   const persistColumns = useCallback((event: ColumnMovedEvent<DataRow> | ColumnResizedEvent<DataRow> | ColumnVisibleEvent<DataRow>) => {
     if ("finished" in event && event.finished === false) return;

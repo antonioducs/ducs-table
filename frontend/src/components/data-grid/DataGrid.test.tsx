@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ColDef, GridReadyEvent, GridState, IDatasource, IGetRowsParams } from "ag-grid-community";
+import type { ColDef, ColumnState, GridReadyEvent, GridState, IDatasource, IGetRowsParams } from "ag-grid-community";
 import type { DataRow, SourceInfo } from "@/types";
 
 const gridHarness = vi.hoisted(() => {
@@ -45,18 +45,29 @@ vi.mock("ag-grid-react", async () => {
     }) => {
       useEffect(() => {
         if (rowModelType !== "infinite") return;
-        const state = (columnDefs ?? []).map((column) => ({ colId: column.colId }));
+        let datasource: IDatasource | undefined;
+        const state: ColumnState[] = (columnDefs ?? []).map((column) => ({ colId: column.colId! }));
         onGridReady?.({
           api: {
             setGridAriaProperty: vi.fn(),
-            applyColumnState: vi.fn(),
-            getColumnState: () => state,
+            applyColumnState: ({ state: updates }: { state: ColumnState[] }) => {
+              for (const update of updates) {
+                const column = state.find((item) => item.colId === update.colId);
+                if (column) Object.assign(column, update);
+              }
+            },
+            purgeInfiniteCache: vi.fn(),
+            getColumnState: () => state.map((column) => ({ ...column })),
             getFilterModel: () => initialState?.filter?.filterModel ?? {},
             setGridOption: (key: string, value: IDatasource) => {
-              if (key === "datasource") gridHarness.setDatasource(value);
+              if (key === "datasource") {
+                datasource = value;
+                gridHarness.setDatasource(value);
+              }
             },
           },
         } as unknown as GridReadyEvent<DataRow>);
+        return () => datasource?.destroy?.();
       }, [columnDefs, initialState, onGridReady, rowModelType]);
 
       return (
@@ -157,6 +168,43 @@ describe("DataGrid", () => {
       });
     });
     expect(screen.getByRole("menuitemcheckbox", { name: /age/i })).toBeChecked();
+  });
+
+  it.each(["one column", "Show all"])("loads rows after Hide all and restoring %s", async (restore) => {
+    const user = userEvent.setup();
+    const rows = [{ name: "Ada", age: 36 }];
+    bridgeHarness.getRows.mockResolvedValue({ rows, totalRows: 1 });
+    render(<DataGrid source={source({
+      id: `hide-all-${restore}`, status: "ready", previewRows: undefined,
+    })} />);
+
+    await user.click(screen.getByRole("button", { name: /Columns/i }));
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await user.click(screen.getByRole("menuitem", { name: "Hide all" }));
+      expect(screen.getByText("No visible columns")).toBeInTheDocument();
+      expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+
+      await user.click(restore === "Show all"
+        ? screen.getByRole("menuitem", { name: "Show all" })
+        : screen.getByRole("menuitemcheckbox", { name: /name varchar/i }));
+
+      const successCallback = vi.fn();
+      const failCallback = vi.fn();
+      await act(async () => {
+        gridHarness.getDatasource()!.getRows({
+          startRow: 0, endRow: 250, sortModel: [], filterModel: {},
+          context: undefined, successCallback, failCallback,
+        });
+      });
+      expect(successCallback).toHaveBeenCalledWith(rows, 1);
+      expect(failCallback).not.toHaveBeenCalled();
+      expect(screen.getByTestId("data-grid-surface").querySelector('[role="grid"]'))
+        .toHaveAttribute("data-loading", "false");
+      expect(screen.queryByText(/Loading first/)).not.toBeInTheDocument();
+      expect(bridgeHarness.getRows).toHaveBeenLastCalledWith(expect.objectContaining({
+        visibleColumns: restore === "Show all" ? ["name", "age"] : ["name"],
+      }));
+    }
   });
 
   it("renders the no-columns state and publishes an empty view", async () => {

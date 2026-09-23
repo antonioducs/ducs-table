@@ -138,9 +138,10 @@ func TestSourcesAndSavedQueriesAreStrictlyProjectScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if renamed.DisplayName != "People report" || renamed.SQLName != source.SQLName {
+	if renamed.DisplayName != "People report" || renamed.SQLName != "people_report" {
 		t.Fatalf("renamed source = %#v", renamed)
 	}
+	source = renamed
 	if _, err := service.RenameSource(ctx, second.ID, source.ID, "Stolen"); errorCode(err) != models.CodeSourceNotFound {
 		t.Fatalf("cross-project source rename error = %#v", err)
 	}
@@ -201,6 +202,62 @@ func TestSourcesAndSavedQueriesAreStrictlyProjectScoped(t *testing.T) {
 	exists, err = database.TableExists(ctx, db.SQL(), source.Schema, source.SQLName)
 	if err != nil || exists {
 		t.Fatalf("dataset table exists=%v err=%v", exists, err)
+	}
+}
+
+func TestRenameSourceUpdatesQueryableTable(t *testing.T) {
+	for _, schema := range []string{"data", "result"} {
+		t.Run(schema, func(t *testing.T) {
+			ctx, db, service, project := testWorkspace(t)
+			source := insertSource(t, db, project.ID, "source", schema, "long_original_name", schema == "result")
+			for _, name := range []string{"testing", "Testing", "People report", `Quoted "name"; --`} {
+				previous := source.SQLName
+				renamed, err := service.RenameSource(ctx, project.ID, source.ID, name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if renamed.ID != source.ID || renamed.SQLName != database.NormalizeIdentifier(name) ||
+					renamed.DisplayName != name || len(renamed.Columns) != 1 || renamed.RowCount != 1 {
+					t.Fatalf("renamed source = %#v", renamed)
+				}
+				var value int
+				query := "SELECT value FROM " + database.QuoteQualified(schema, renamed.SQLName)
+				if err := db.SQL().QueryRowContext(ctx, query).Scan(&value); err != nil || value != 1 {
+					t.Fatalf("query after rename: value=%d err=%v", value, err)
+				}
+				if previous != renamed.SQLName {
+					exists, err := database.TableExists(ctx, db.SQL(), schema, previous)
+					if err != nil || exists {
+						t.Fatalf("old table exists=%v err=%v", exists, err)
+					}
+				}
+				boot, err := service.Bootstrap(ctx, project.ID)
+				if err != nil || len(boot.Sources) != 1 || boot.Sources[0].SQLName != renamed.SQLName {
+					t.Fatalf("persisted sources=%#v err=%v", boot.Sources, err)
+				}
+				source = renamed
+			}
+		})
+	}
+}
+
+func TestRenameSourceConflictPreservesSource(t *testing.T) {
+	ctx, db, service, project := testWorkspace(t)
+	source := insertSource(t, db, project.ID, "source", "data", "original", false)
+	insertSource(t, db, project.ID, "other", "data", "Testing", false)
+	if _, err := service.RenameSource(ctx, project.ID, source.ID, "testing"); errorCode(err) != models.CodeConflict {
+		t.Fatalf("conflicting rename error=%v", err)
+	}
+	got, err := service.GetSource(ctx, project.ID, source.ID)
+	if err != nil || got.SQLName != source.SQLName || got.DisplayName != source.DisplayName {
+		t.Fatalf("source after conflict=%#v err=%v", got, err)
+	}
+	for _, name := range []string{"original", "Testing"} {
+		var value int
+		query := "SELECT value FROM " + database.QuoteQualified("data", name)
+		if err := db.SQL().QueryRowContext(ctx, query).Scan(&value); err != nil || value != 1 {
+			t.Fatalf("table %s after conflict: value=%d err=%v", name, value, err)
+		}
 	}
 }
 

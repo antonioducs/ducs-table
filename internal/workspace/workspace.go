@@ -141,8 +141,7 @@ func (s *Service) GetDataset(ctx context.Context, projectID, id string) (models.
 	return s.GetSource(ctx, projectID, id)
 }
 
-// RenameSource changes only the user-facing label. The physical DuckDB table
-// and its SQL name stay unchanged so existing queries keep working.
+// RenameSource atomically updates the label, SQL name, and physical table.
 func (s *Service) RenameSource(ctx context.Context, projectID, id, displayName string) (models.SourceInfo, error) {
 	if strings.TrimSpace(id) == "" {
 		return models.SourceInfo{}, models.NewError(models.CodeInvalidArgument, "Source ID is required", nil)
@@ -153,12 +152,36 @@ func (s *Service) RenameSource(ctx context.Context, projectID, id, displayName s
 	}
 	now := time.Now().UTC()
 	err = s.db.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, err := GetSource(ctx, tx, projectID, id, false); err != nil {
+		source, err := GetSource(ctx, tx, projectID, id, false)
+		if err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `
-			UPDATE ducs_meta.datasets SET display_name = ?, updated_at = ?
-			WHERE project_id = ? AND id = ?`, displayName, now, projectID, id)
+		sqlName := database.NormalizeIdentifier(displayName)
+		if sqlName != source.SQLName {
+			var exists bool
+			err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM information_schema.tables
+				WHERE table_schema = ? AND lower(table_name) = lower(?) AND table_name <> ?)`,
+				source.Schema, sqlName, source.SQLName,
+			).Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if exists {
+				return models.NewError(models.CodeConflict, "A table with this SQL name already exists",
+					map[string]any{"sqlName": sqlName})
+			}
+			statement := "ALTER TABLE " + database.QuoteQualified(source.Schema, source.SQLName) +
+				" RENAME TO " + database.QuoteIdentifier(sqlName)
+			if _, err := tx.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+		_, err = tx.ExecContext(ctx, `
+			UPDATE ducs_meta.datasets SET display_name = ?, sql_name = ?, updated_at = ?
+			WHERE project_id = ? AND id = ?`,
+			displayName, sqlName, now, projectID, id,
+		)
 		return err
 	})
 	if err != nil {

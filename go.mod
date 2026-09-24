@@ -5,7 +5,7 @@ go 1.25.13
 require (
 	github.com/99designs/keyring v1.2.2
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
-	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/xuri/excelize/v2 v2.11.0
 )
 

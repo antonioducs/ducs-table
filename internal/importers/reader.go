@@ -42,12 +42,16 @@ func csvReaderAttempts(file FileInfo, options Options) ([]readerAttempt, error) 
 	if delimiter != "" && utf8.RuneCountInString(delimiter) != 1 {
 		return nil, models.NewError(models.CodeInvalidArgument, "CSV delimiter must be exactly one character", nil)
 	}
-	build := func(allVarchar bool) readerAttempt {
+	build := func(allVarchar, rfcQuoting bool) readerAttempt {
 		parts := []string{"?"}
 		args := []any{file.Path}
 		if delimiter != "" {
 			parts = append(parts, "delim = ?")
 			args = append(args, delimiter)
+		}
+		if rfcQuoting {
+			parts = append(parts, "quote = ?", "escape = ?")
+			args = append(args, `"`, `"`)
 		}
 		if options.Header != nil {
 			parts = append(parts, "header = ?")
@@ -61,11 +65,18 @@ func csvReaderAttempts(file FileInfo, options Options) ([]readerAttempt, error) 
 		}
 		return readerAttempt{expression: "read_csv_auto(" + strings.Join(parts, ", ") + ")", args: args}
 	}
-	attempts := []readerAttempt{build(options.AllVarchar)}
-	// Type inference can fail on mixed late rows. A varchar retry still streams
-	// the file and preserves every field; ignore_errors remains user-controlled.
-	if !options.AllVarchar {
-		attempts = append(attempts, build(true))
+	var attempts []readerAttempt
+	// The sniffer only samples the first rows: when no quoted field appears
+	// there it settles on "no quote" and a later `"a,b"` splits into an extra
+	// column. Sniffed attempts run first so detected quotes (e.g. ') still win;
+	// RFC 4180 quoting (" escaped as "") is the fallback.
+	for _, rfcQuoting := range []bool{false, true} {
+		attempts = append(attempts, build(options.AllVarchar, rfcQuoting))
+		// Type inference can fail on mixed late rows. A varchar retry still streams
+		// the file and preserves every field; ignore_errors remains user-controlled.
+		if !options.AllVarchar {
+			attempts = append(attempts, build(true, rfcQuoting))
+		}
 	}
 	return attempts, nil
 }

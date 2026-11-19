@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Added
+
+- Renaming a source table now atomically updates its display name, normalized
+  SQL table name, and metadata; conflicting SQL names are rejected without
+  changing the source.
 
 - In-app updates from GitHub Releases. Release builds check for a newer
   version shortly after launch and every 6 hours (can be turned off from the
@@ -19,6 +25,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The privacy policy, README, and security model now list update checks
   against `api.github.com` as expected network egress.
+
+### Fixed
+
+- CSV imports no longer fail when quoted fields only appear after the DuckDB
+  sniffer sample; the reader retries with RFC 4180 quoting.
+- The data grid no longer loads forever after hiding all columns and then
+  restoring them.
 
 ## [0.1.2] - 2026-09-01
 

@@ -3,8 +3,10 @@ package importers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +111,42 @@ func TestHeaderOnlyCSVCompletesWithZeroRows(t *testing.T) {
 	}
 	if len(source.Columns) != 2 || source.RowCount != 0 {
 		t.Fatalf("header-only source = %d columns, %d rows", len(source.Columns), source.RowCount)
+	}
+}
+
+func TestCSVWithQuotedFieldsOnlyBeyondSnifferSample(t *testing.T) {
+	db, _, projectID := openImporterTestDB(t)
+	var csv strings.Builder
+	csv.WriteString("id,name,size\n")
+	const plainRows = 30000 // beyond DuckDB's default 20480-row sniff sample
+	for i := 0; i < plainRows; i++ {
+		fmt.Fprintf(&csv, "%d,PLAIN %d,M\n", i, i)
+	}
+	csv.WriteString(`900001,"CANTIL 0,9L",U` + "\n")
+	csv.WriteString(`900002,"CALCAO 5""",G` + "\n")
+	path := filepath.Join(t.TempDir(), "late-quotes.csv")
+	if err := os.WriteFile(path, []byte(csv.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	source, err := New(db).Materialize(ctx, MaterializeRequest{ProjectID: projectID, Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.RowCount != plainRows+2 || len(source.Columns) != 3 {
+		t.Fatalf("source = %d rows, %d columns", source.RowCount, len(source.Columns))
+	}
+	table := database.QuoteQualified(source.Schema, source.SQLName)
+	for id, want := range map[int]string{900001: "CANTIL 0,9L", 900002: `CALCAO 5"`} {
+		var name string
+		if err := db.SQL().QueryRowContext(ctx, "SELECT name FROM "+table+" WHERE CAST(id AS BIGINT) = ?", id).Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if name != want {
+			t.Fatalf("name for %d = %q, want %q", id, name, want)
+		}
 	}
 }
 
